@@ -1,9 +1,10 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import ENUM, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -27,6 +28,8 @@ class Claim(Base):
     status: Mapped[ClaimStatus] = mapped_column(claim_status_enum, nullable=False, default=ClaimStatus.submitted)
     claim_type: Mapped[ClaimType] = mapped_column(claim_type_enum, nullable=False)
     date_of_service: Mapped[date] = mapped_column(Date, nullable=False)
+    procedure_codes: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    diagnosis_codes: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     assigned_adjuster_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.user_id"))
     current_graph_thread_id: Mapped[str | None] = mapped_column(String(255))

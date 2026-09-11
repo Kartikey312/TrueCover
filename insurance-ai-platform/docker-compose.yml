@@ -19,7 +19,9 @@ services:
       retries: 10
 
   api:
-    build: ./backend/api
+    build:
+      context: ./backend
+      dockerfile: api/Dockerfile
     container_name: insurance_api
     restart: unless-stopped
     depends_on:

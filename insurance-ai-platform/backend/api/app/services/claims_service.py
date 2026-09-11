@@ -9,18 +9,11 @@ from app.models.ai_recommendation import AIRecommendation
 from app.models.audit_event import AuditEvent
 from app.models.claim import Claim
 from app.models.claim_document import ClaimDocument
-from app.models.enums import (
-    ActorType,
-    AIRecommendationStatus,
-    ClaimStatus,
-    DocumentType,
-    FinalDecisionStatus,
-)
+from app.models.enums import ActorType, ClaimStatus, DocumentType, FinalDecisionStatus
 from app.models.member import Member
 from app.models.policy import Policy
 from app.models.provider import ProviderHospital
 from app.schemas.claim import ClaimCreate
-from app.schemas.decision import ClaimDecisionCreate
 from app.services import audit_service
 
 
@@ -55,6 +48,8 @@ async def create_claim(db: AsyncSession, payload: ClaimCreate) -> Claim:
         claim_type=payload.claim_type,
         date_of_service=payload.date_of_service,
         billed_amount=payload.billed_amount,
+        procedure_codes=payload.procedure_codes,
+        diagnosis_codes=payload.diagnosis_codes,
         status=ClaimStatus.submitted,
         final_decision=FinalDecisionStatus.pending,
     )
@@ -133,68 +128,6 @@ async def get_timeline(db: AsyncSession, claim_id: uuid.UUID) -> list[AuditEvent
         .order_by(AuditEvent.created_at.asc())
     )
     return list(result.scalars().all())
-
-
-async def record_decision(db: AsyncSession, claim_id: uuid.UUID, payload: ClaimDecisionCreate) -> Claim:
-    claim = await get_claim(db, claim_id)
-
-    if payload.final_decision == FinalDecisionStatus.pending:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "final_decision must be 'approved', 'denied', or 'partially_approved'",
-        )
-
-    previous_status = claim.status
-    previous_decision = claim.final_decision
-
-    claim.final_decision = payload.final_decision
-    claim.final_decision_reason = payload.reason
-    claim.final_decision_at = datetime.now(timezone.utc)
-    claim.approved_amount = payload.approved_amount
-    if payload.final_decision == FinalDecisionStatus.approved:
-        claim.status = ClaimStatus.approved
-    elif payload.final_decision == FinalDecisionStatus.denied:
-        claim.status = ClaimStatus.denied
-    else:
-        claim.status = ClaimStatus.closed
-
-    result = await db.execute(
-        select(AIRecommendation)
-        .where(
-            AIRecommendation.claim_id == claim_id,
-            AIRecommendation.status == AIRecommendationStatus.pending_review,
-        )
-        .order_by(AIRecommendation.created_at.desc())
-        .limit(1)
-    )
-    recommendation = result.scalar_one_or_none()
-    if recommendation is not None:
-        matches = (
-            payload.final_decision == FinalDecisionStatus.approved
-            and recommendation.recommendation_type.value == "approve"
-        ) or (
-            payload.final_decision == FinalDecisionStatus.denied
-            and recommendation.recommendation_type.value == "deny"
-        )
-        recommendation.status = AIRecommendationStatus.accepted if matches else AIRecommendationStatus.overridden
-        recommendation.reviewed_by = payload.decided_by
-        recommendation.reviewed_at = datetime.now(timezone.utc)
-
-    await audit_service.record_event(
-        db,
-        entity_type="claim",
-        entity_id=claim.claim_id,
-        event_type="decision_recorded",
-        actor_type=ActorType.user,
-        actor_id=payload.decided_by,
-        description=payload.reason,
-        old_value={"status": previous_status.value, "final_decision": previous_decision.value},
-        new_value={"status": claim.status.value, "final_decision": claim.final_decision.value},
-    )
-
-    await db.commit()
-    await db.refresh(claim)
-    return claim
 
 
 async def get_latest_recommendation(db: AsyncSession, claim_id: uuid.UUID) -> AIRecommendation:

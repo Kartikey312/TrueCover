@@ -8,10 +8,20 @@ Pipeline:
 extraction_node short-circuits straight to human_review_node when the
 structured input fails validation, since retrieval/rules/reasoning/
 guardrails all assume valid extracted_data.
+
+human_review_node calls interrupt(), so a real (durable) checkpointer is
+required for that path to actually work -- without one, LangGraph has
+nowhere to persist the paused state and resuming later isn't possible.
+Pass one explicitly for anything beyond a single in-process test (e.g. a
+Postgres-backed saver so a paused review survives an API restart);
+omitting it defaults to an in-memory saver, fine for tests but the paused
+state won't survive the process exiting.
 """
 
 from typing import Literal
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -41,7 +51,8 @@ def route_after_guardrail(state: ClaimState) -> Literal["auto_process_node", "hu
     return "human_review_node"
 
 
-def build_graph() -> CompiledStateGraph:
+def build_graph(checkpointer: BaseCheckpointSaver | None = None) -> CompiledStateGraph:
+    checkpointer = checkpointer or MemorySaver()
     graph = StateGraph(ClaimState)
 
     graph.add_node("extraction_node", extraction_node)
@@ -74,4 +85,4 @@ def build_graph() -> CompiledStateGraph:
     graph.add_edge("human_review_node", "audit_log_node")
     graph.add_edge("audit_log_node", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

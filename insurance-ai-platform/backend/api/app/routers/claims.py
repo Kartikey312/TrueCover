@@ -9,8 +9,9 @@ from app.schemas.claim import ClaimCreate, ClaimRead
 from app.schemas.decision import ClaimDecisionCreate
 from app.schemas.document import ClaimDocumentRead
 from app.schemas.recommendation import AIRecommendationRead
+from app.schemas.review import ClaimReviewPacket
 from app.schemas.timeline import TimelineEvent
-from app.services import claims_service, storage_service
+from app.services import claims_service, pipeline_service, storage_service
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -46,6 +47,20 @@ async def upload_document(
     )
 
 
+@router.post("/{claim_id}/submit", response_model=ClaimRead)
+async def submit_claim(claim_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Runs the claim through the AI pipeline now that documents (if any)
+    are attached. Either auto-processes it immediately or pauses it for
+    adjuster review -- see GET /claims/{id}/review for that packet.
+    """
+    return await pipeline_service.submit_claim_for_review(db, claim_id)
+
+
+@router.get("/{claim_id}/review", response_model=ClaimReviewPacket)
+async def get_review_packet(claim_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    return await pipeline_service.get_review_packet(db, claim_id)
+
+
 @router.get("/{claim_id}/timeline", response_model=list[TimelineEvent])
 async def get_timeline(claim_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return await claims_service.get_timeline(db, claim_id)
@@ -53,7 +68,7 @@ async def get_timeline(claim_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 @router.post("/{claim_id}/decision", response_model=ClaimRead)
 async def record_decision(claim_id: uuid.UUID, payload: ClaimDecisionCreate, db: AsyncSession = Depends(get_db)):
-    return await claims_service.record_decision(db, claim_id, payload)
+    return await pipeline_service.resume_claim_decision(db, claim_id, payload)
 
 
 @router.get("/{claim_id}/recommendation", response_model=AIRecommendationRead)

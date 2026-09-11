@@ -1,9 +1,11 @@
 from graph.nodes import (
+    _build_review_packet,
+    _finalize_human_decision,
+    _queue_reason,
     audit_log_node,
     auto_process_node,
     extraction_node,
     guardrail_node,
-    human_review_node,
     reasoning_node,
     retrieval_node,
     rule_resolution_node,
@@ -246,18 +248,81 @@ def test_auto_process_node_never_invents_a_denial():
     assert result["final_outcome"]["claim_status"] == "pending_adjuster_review"
 
 
-def test_human_review_node_reports_extraction_errors():
+# human_review_node itself calls interrupt(), which raises outside a
+# compiled graph's runtime -- it can only be exercised end-to-end (see
+# test_build_graph.py). Its pure helpers are unit tested directly here.
+
+
+def test_queue_reason_reports_extraction_errors():
     state = {"extraction_errors": ["Missing required field: member_id"]}
-    result = human_review_node(state)
+    assert "member_id" in _queue_reason(state)
+
+
+def test_queue_reason_reports_guardrail_reason():
+    state = {"guardrail_result": {"reason": "Guardrail(s) triggered: approval_ceiling_exceeded."}}
+    assert "approval_ceiling_exceeded" in _queue_reason(state)
+
+
+def test_queue_reason_defaults_when_nothing_present():
+    assert _queue_reason({}) == "Routed to human review."
+
+
+def test_build_review_packet_surfaces_everything_from_state():
+    state = {
+        "extracted_data": {"claim_type": "dental", "billed_amount": "100.00"},
+        "retrieved_context": [{"source": "coverage_policy"}],
+        "reasoning_output": {
+            "recommendation_type": "approve",
+            "confidence_score": 0.9,
+            "reasoning": "AUTO-APPROVE-LOW-VALUE: matched.",
+            "model_name": "rules-engine-v1",
+        },
+        "guardrail_result": {"checks": [{"name": "amount_below_cap", "passed": True, "reason": ""}]},
+    }
+    packet = _build_review_packet(state, "some reason")
+
+    assert packet["extracted_data"] == state["extracted_data"]
+    assert packet["policy_citations"] == state["retrieved_context"]
+    assert packet["recommendation_type"] == "approve"
+    assert packet["confidence_score"] == 0.9
+    assert packet["reasoning"] == "AUTO-APPROVE-LOW-VALUE: matched."
+    assert packet["model_name"] == "rules-engine-v1"
+    assert packet["guardrail_reason"] == "some reason"
+    assert packet["guardrail_checks"] == state["guardrail_result"]["checks"]
+
+
+def test_build_review_packet_handles_missing_state():
+    packet = _build_review_packet({}, "no data yet")
+    assert packet["extracted_data"] == {}
+    assert packet["policy_citations"] == []
+    assert packet["recommendation_type"] is None
+
+
+def test_finalize_human_decision_approved():
+    decision = {"final_decision": "approved", "adjuster_id": "adj-1", "reason": "Looks correct."}
+    result = _finalize_human_decision(decision, "default reason")
 
     assert result["final_outcome"]["decision_path"] == "human_review"
-    assert "member_id" in result["final_outcome"]["reason"]
+    assert result["final_outcome"]["final_decision"] == "approved"
+    assert result["final_outcome"]["claim_status"] == "approved"
+    assert result["final_outcome"]["processed_by"] == "adj-1"
+    assert result["final_outcome"]["reason"] == "Looks correct."
+    assert result["audit_trail"][0]["event_type"] == "human_decision_recorded"
+    assert result["audit_trail"][0]["data"]["adjuster_id"] == "adj-1"
 
 
-def test_human_review_node_reports_guardrail_reason():
-    state = {"guardrail_result": {"reason": "Guardrail(s) triggered: approval_ceiling_exceeded."}}
-    result = human_review_node(state)
-    assert "approval_ceiling_exceeded" in result["final_outcome"]["reason"]
+def test_finalize_human_decision_denied():
+    decision = {"final_decision": "denied", "adjuster_id": "adj-2", "reason": "Not covered."}
+    result = _finalize_human_decision(decision, "default reason")
+
+    assert result["final_outcome"]["final_decision"] == "denied"
+    assert result["final_outcome"]["claim_status"] == "denied"
+
+
+def test_finalize_human_decision_falls_back_to_default_reason():
+    decision = {"final_decision": "approved", "adjuster_id": "adj-3"}
+    result = _finalize_human_decision(decision, "queued because X")
+    assert result["final_outcome"]["reason"] == "queued because X"
 
 
 # --- audit_log_node ----------------------------------------------------------

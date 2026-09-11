@@ -2,8 +2,9 @@
 
 Each node is a plain function `(ClaimState) -> dict`: it reads only the
 state keys it needs, returns only the keys it sets (LangGraph merges the
-partial update into state), and always appends one entry to `audit_trail`
-so the full pipeline history is reconstructable from state alone.
+partial update into state), and appends one entry to `audit_trail` so the
+full pipeline history is reconstructable from state alone. human_review_node
+is the one exception -- see its docstring.
 
 Extraction here is deterministic and expects already-structured input
 (`raw_input` as a dict). OCR, vision, and audio transcription are future
@@ -16,9 +17,17 @@ input/output contract won't need to change when that's wired in.
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from langgraph.types import interrupt
+
 from .guardrails import evaluate_guardrails
 from .rules import evaluate_rules, resolve_verdict
 from .state import ClaimState, make_audit_event
+
+CLAIM_STATUS_BY_FINAL_DECISION: dict[str, str] = {
+    "approved": "approved",
+    "denied": "denied",
+    "partially_approved": "closed",
+}
 
 REQUIRED_FIELDS = (
     "claim_id",
@@ -312,36 +321,84 @@ def auto_process_node(state: ClaimState) -> dict[str, Any]:
     }
 
 
-def human_review_node(state: ClaimState) -> dict[str, Any]:
+def _queue_reason(state: ClaimState) -> str:
     extraction_errors = state.get("extraction_errors") or []
     guardrail_result = state.get("guardrail_result") or {}
 
     if extraction_errors:
-        reason = f"Routed to human review: incomplete extraction ({'; '.join(extraction_errors)})."
-    elif guardrail_result:
-        reason = guardrail_result.get("reason", "Routed to human review.")
-    else:
-        reason = "Routed to human review."
+        return f"Incomplete extraction ({'; '.join(extraction_errors)})."
+    if guardrail_result:
+        return guardrail_result.get("reason", "Routed to human review.")
+    return "Routed to human review."
 
+
+def _build_review_packet(state: ClaimState, queue_reason: str) -> dict[str, Any]:
+    """Everything an adjuster needs to decide, drawn entirely from state
+    already produced upstream -- no new lookups happen here. "Similar
+    claims" isn't included: that's a live Postgres query the caller
+    displaying this packet performs separately.
+    """
+    reasoning_output = state.get("reasoning_output") or {}
+    guardrail_result = state.get("guardrail_result") or {}
+
+    return {
+        "extracted_data": state.get("extracted_data") or {},
+        "policy_citations": state.get("retrieved_context") or [],
+        "recommendation_type": reasoning_output.get("recommendation_type"),
+        "confidence_score": reasoning_output.get("confidence_score"),
+        "reasoning": reasoning_output.get("reasoning"),
+        "model_name": reasoning_output.get("model_name"),
+        "guardrail_reason": queue_reason,
+        "guardrail_checks": guardrail_result.get("checks", []),
+    }
+
+
+def _finalize_human_decision(decision: dict[str, Any], default_reason: str) -> dict[str, Any]:
     final_outcome = {
         "decision_path": "human_review",
-        "final_decision": "pending",
-        "claim_status": "pending_adjuster_review",
-        "reason": reason,
-        "processed_by": "system",
+        "final_decision": decision["final_decision"],
+        "claim_status": CLAIM_STATUS_BY_FINAL_DECISION.get(
+            decision["final_decision"], "pending_adjuster_review"
+        ),
+        "reason": decision.get("reason") or default_reason,
+        "processed_by": decision["adjuster_id"],
     }
 
     event = make_audit_event(
         node="human_review_node",
-        event_type="queued_for_human_review",
-        description=reason,
-        data={},
+        event_type="human_decision_recorded",
+        description=f"Adjuster {decision['adjuster_id']} recorded decision: {decision['final_decision']}.",
+        data={"final_decision": decision["final_decision"], "adjuster_id": decision["adjuster_id"]},
     )
 
     return {
         "final_outcome": final_outcome,
         "audit_trail": [event],
     }
+
+
+def human_review_node(state: ClaimState) -> dict[str, Any]:
+    """Pauses the graph and waits for an adjuster's explicit decision.
+
+    LangGraph replays a node from the top on resume rather than continuing
+    mid-function, so everything before `interrupt()` re-runs and must stay
+    side-effect-free -- it only reads state and assembles the review
+    packet. Because of that replay, the function never returns while
+    paused (interrupt() doesn't return until resumed), so no audit event
+    is appended for the pause itself; whatever drives the graph is
+    responsible for recording that a pause happened. Only on resume, once
+    a real decision is available, does this node return -- appending
+    exactly one audit event for the decision.
+
+    `decision` (from `Command(resume=decision)`) must be a dict with
+    `final_decision`, `adjuster_id`, and optionally `reason`.
+    """
+    queue_reason = _queue_reason(state)
+    review_packet = _build_review_packet(state, queue_reason)
+
+    decision = interrupt(review_packet)
+
+    return _finalize_human_decision(decision, queue_reason)
 
 
 def audit_log_node(state: ClaimState) -> dict[str, Any]:

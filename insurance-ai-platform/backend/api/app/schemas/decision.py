@@ -13,3 +13,14 @@ class ClaimDecisionCreate(BaseModel):
     )
     approved_amount: Decimal | None = Field(default=None, ge=0)
     reason: str = Field(..., min_length=1)
+    idempotency_key: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description=(
+            "Client-generated key, stable across retries of the same decision "
+            "(e.g. one UUID per review session). A replay with the same key and "
+            "the same parameters returns the original result; the same key with "
+            "different parameters is rejected."
+        ),
+    )
