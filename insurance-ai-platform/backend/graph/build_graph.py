@@ -36,7 +36,7 @@ def route_after_extraction(state: ClaimState) -> Literal["retrieval_node", "huma
 
 def route_after_guardrail(state: ClaimState) -> Literal["auto_process_node", "human_review_node"]:
     guardrail_result = state.get("guardrail_result") or {}
-    if guardrail_result.get("passed") and guardrail_result.get("final_recommendation_type") in ("approve", "deny"):
+    if guardrail_result.get("passed"):
         return "auto_process_node"
     return "human_review_node"
 

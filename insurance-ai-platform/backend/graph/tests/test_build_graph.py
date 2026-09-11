@@ -6,16 +6,18 @@ def _run(raw_input):
     return graph.invoke({"claim_id": raw_input.get("claim_id"), "raw_input": raw_input})
 
 
-def test_full_pipeline_auto_approves_low_value_claim():
+def test_full_pipeline_auto_approves_low_value_dental_claim():
+    # Only dental/vision are in the guardrails' auto-eligible allowlist for
+    # this release -- everything else, however clean, must go to a human.
     raw_input = {
         "claim_id": "CLM-1",
         "member_id": "m1",
         "policy_id": "p1",
         "provider_id": "prov-1",
-        "claim_type": "medical",
+        "claim_type": "dental",
         "date_of_service": "2026-08-01",
         "billed_amount": "100.00",
-        "procedure_codes": ["99213"],
+        "procedure_codes": ["D1110"],
         "documents": ["doc-1"],
     }
 
@@ -36,7 +38,10 @@ def test_full_pipeline_auto_approves_low_value_claim():
     ]
 
 
-def test_full_pipeline_denies_unrecognized_claim_type():
+def test_full_pipeline_never_auto_processes_a_denial():
+    # rule_resolution_node/reasoning_node still recommend "deny" for an
+    # unrecognized claim type, but denials are adverse determinations --
+    # guardrail_node must block this from auto_process_node regardless.
     raw_input = {
         "claim_id": "CLM-2",
         "member_id": "m1",
@@ -50,8 +55,69 @@ def test_full_pipeline_denies_unrecognized_claim_type():
 
     final_state = _run(raw_input)
 
-    assert final_state["final_outcome"]["final_decision"] == "denied"
-    assert final_state["final_outcome"]["decision_path"] == "auto_process"
+    assert final_state["final_outcome"]["decision_path"] == "human_review"
+    assert final_state["final_outcome"]["final_decision"] == "pending"
+    assert final_state["reasoning_output"]["recommendation_type"] == "deny"
+
+
+def test_full_pipeline_blocks_auto_processing_for_ineligible_claim_type():
+    # An otherwise-perfect low-value claim, but "medical" is not in the
+    # narrow auto-eligible allowlist -- must still go to a human.
+    raw_input = {
+        "claim_id": "CLM-6",
+        "member_id": "m1",
+        "policy_id": "p1",
+        "provider_id": "prov-1",
+        "claim_type": "medical",
+        "date_of_service": "2026-08-01",
+        "billed_amount": "100.00",
+        "procedure_codes": ["99213"],
+        "documents": ["doc-1"],
+    }
+
+    final_state = _run(raw_input)
+
+    assert final_state["final_outcome"]["decision_path"] == "human_review"
+    assert "claim_type_auto_eligible" in final_state["guardrail_result"]["failed_checks"]
+
+
+def test_full_pipeline_blocks_auto_processing_for_behavioral_health_diagnosis():
+    raw_input = {
+        "claim_id": "CLM-7",
+        "member_id": "m1",
+        "policy_id": "p1",
+        "provider_id": "prov-1",
+        "claim_type": "dental",
+        "date_of_service": "2026-08-01",
+        "billed_amount": "100.00",
+        "procedure_codes": ["D1110"],
+        "diagnosis_codes": ["F41.1"],
+        "documents": ["doc-1"],
+    }
+
+    final_state = _run(raw_input)
+
+    assert final_state["final_outcome"]["decision_path"] == "human_review"
+    assert "not_behavioral_health" in final_state["guardrail_result"]["failed_checks"]
+
+
+def test_full_pipeline_blocks_auto_processing_for_hospital_override():
+    raw_input = {
+        "claim_id": "CLM-8",
+        "member_id": "m1",
+        "policy_id": "p1",
+        "provider_id": "prov-flagged-1",
+        "claim_type": "dental",
+        "date_of_service": "2026-08-01",
+        "billed_amount": "100.00",
+        "procedure_codes": ["D1110"],
+        "documents": ["doc-1"],
+    }
+
+    final_state = _run(raw_input)
+
+    assert final_state["final_outcome"]["decision_path"] == "human_review"
+    assert "no_hospital_override" in final_state["guardrail_result"]["failed_checks"]
 
 
 def test_full_pipeline_routes_incomplete_input_straight_to_human_review():

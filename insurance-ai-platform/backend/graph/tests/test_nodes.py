@@ -125,49 +125,103 @@ def test_reasoning_node_defaults_to_escalate_on_no_match():
 # --- guardrail_node ---------------------------------------------------------
 
 
-def test_guardrail_node_passes_clean_approval():
-    state = {
-        "reasoning_output": {"recommendation_type": "approve", "confidence_score": 0.9},
-        "extracted_data": {"billed_amount": "100.00"},
-    }
-    result = guardrail_node(state)
+CLEAN_GUARDRAIL_STATE = {
+    "reasoning_output": {"recommendation_type": "approve", "confidence_score": 0.9},
+    "extracted_data": {
+        "claim_type": "dental",
+        "billed_amount": "100.00",
+        "diagnosis_codes": ["K02.9"],
+        "documents": ["doc-1"],
+    },
+    "applicable_rules": [],
+    "retrieved_context": [],
+}
+
+
+def test_guardrail_node_passes_clean_low_value_dental_approval():
+    result = guardrail_node(CLEAN_GUARDRAIL_STATE)
 
     assert result["guardrail_result"]["passed"] is True
     assert result["guardrail_result"]["final_recommendation_type"] == "approve"
+    assert result["guardrail_result"]["failed_checks"] == []
+    assert len(result["guardrail_result"]["checks"]) == 8
 
 
-def test_guardrail_node_blocks_high_value_auto_approval():
-    state = {
-        "reasoning_output": {"recommendation_type": "approve", "confidence_score": 0.95},
-        "extracted_data": {"billed_amount": "6000.00"},
-    }
+def test_guardrail_node_blocks_ineligible_claim_type():
+    state = {**CLEAN_GUARDRAIL_STATE, "extracted_data": {**CLEAN_GUARDRAIL_STATE["extracted_data"], "claim_type": "medical"}}
     result = guardrail_node(state)
 
     assert result["guardrail_result"]["passed"] is False
-    assert "approval_ceiling_exceeded" in result["guardrail_result"]["flags"]
+    assert "claim_type_auto_eligible" in result["guardrail_result"]["failed_checks"]
     assert result["guardrail_result"]["final_recommendation_type"] == "escalate"
+
+
+def test_guardrail_node_blocks_amount_above_cap():
+    state = {**CLEAN_GUARDRAIL_STATE, "extracted_data": {**CLEAN_GUARDRAIL_STATE["extracted_data"], "billed_amount": "6000.00"}}
+    result = guardrail_node(state)
+
+    assert result["guardrail_result"]["passed"] is False
+    assert "amount_below_cap" in result["guardrail_result"]["failed_checks"]
 
 
 def test_guardrail_node_blocks_low_confidence_decision():
-    state = {
-        "reasoning_output": {"recommendation_type": "deny", "confidence_score": 0.5},
-        "extracted_data": {"billed_amount": "100.00"},
-    }
+    state = {**CLEAN_GUARDRAIL_STATE, "reasoning_output": {"recommendation_type": "approve", "confidence_score": 0.5}}
     result = guardrail_node(state)
 
-    assert "confidence_below_threshold" in result["guardrail_result"]["flags"]
+    assert "confidence_meets_threshold" in result["guardrail_result"]["failed_checks"]
     assert result["guardrail_result"]["final_recommendation_type"] == "escalate"
 
 
-def test_guardrail_node_always_escalates_fraud_flags():
-    state = {
-        "reasoning_output": {"recommendation_type": "flag_for_fraud", "confidence_score": 0.95},
-        "extracted_data": {"billed_amount": "100.00"},
-    }
+def test_guardrail_node_always_blocks_denials():
+    state = {**CLEAN_GUARDRAIL_STATE, "reasoning_output": {"recommendation_type": "deny", "confidence_score": 0.95}}
     result = guardrail_node(state)
 
     assert result["guardrail_result"]["final_recommendation_type"] == "escalate"
-    assert "fraud_requires_human_review" in result["guardrail_result"]["flags"]
+    assert "not_adverse_determination" in result["guardrail_result"]["failed_checks"]
+
+
+def test_guardrail_node_always_blocks_fraud_flags():
+    state = {**CLEAN_GUARDRAIL_STATE, "reasoning_output": {"recommendation_type": "flag_for_fraud", "confidence_score": 0.95}}
+    result = guardrail_node(state)
+
+    assert result["guardrail_result"]["final_recommendation_type"] == "escalate"
+    assert "not_adverse_determination" in result["guardrail_result"]["failed_checks"]
+
+
+def test_guardrail_node_blocks_behavioral_health_diagnosis():
+    state = {**CLEAN_GUARDRAIL_STATE, "extracted_data": {**CLEAN_GUARDRAIL_STATE["extracted_data"], "diagnosis_codes": ["F41.1"]}}
+    result = guardrail_node(state)
+
+    assert "not_behavioral_health" in result["guardrail_result"]["failed_checks"]
+
+
+def test_guardrail_node_blocks_missing_documents():
+    state = {**CLEAN_GUARDRAIL_STATE, "extracted_data": {**CLEAN_GUARDRAIL_STATE["extracted_data"], "documents": []}}
+    result = guardrail_node(state)
+
+    assert "required_documents_present" in result["guardrail_result"]["failed_checks"]
+
+
+def test_guardrail_node_blocks_fraud_rule_match():
+    state = {
+        **CLEAN_GUARDRAIL_STATE,
+        "applicable_rules": [
+            {"rule_code": "FRAUD-X", "rule_type": "fraud_detection", "matched": True, "action": "flag_fraud", "reason": "x"},
+        ],
+    }
+    result = guardrail_node(state)
+
+    assert "no_fraud_or_policy_conflict" in result["guardrail_result"]["failed_checks"]
+
+
+def test_guardrail_node_blocks_hospital_override():
+    state = {
+        **CLEAN_GUARDRAIL_STATE,
+        "retrieved_context": [{"source": "hospital_rules", "forces_human_review": True}],
+    }
+    result = guardrail_node(state)
+
+    assert "no_hospital_override" in result["guardrail_result"]["failed_checks"]
 
 
 # --- auto_process_node / human_review_node ----------------------------------
@@ -181,10 +235,15 @@ def test_auto_process_node_approves():
     assert result["final_outcome"]["decision_path"] == "auto_process"
 
 
-def test_auto_process_node_denies():
+def test_auto_process_node_never_invents_a_denial():
+    # guardrail_node never actually produces "deny" here (denials always
+    # fail the not_adverse_determination check and route to human_review_node
+    # instead), but auto_process_node must still degrade safely if it is.
     state = {"guardrail_result": {"final_recommendation_type": "deny", "reason": "bad"}}
     result = auto_process_node(state)
-    assert result["final_outcome"]["final_decision"] == "denied"
+
+    assert result["final_outcome"]["final_decision"] == "pending"
+    assert result["final_outcome"]["claim_status"] == "pending_adjuster_review"
 
 
 def test_human_review_node_reports_extraction_errors():

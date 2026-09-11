@@ -51,10 +51,17 @@ class ReasoningOutput(TypedDict):
     model_name: str
 
 
+class GuardrailCheckResult(TypedDict):
+    name: str
+    passed: bool
+    reason: str
+
+
 class GuardrailResult(TypedDict):
     passed: bool
+    checks: list[GuardrailCheckResult]
+    failed_checks: list[str]
     final_recommendation_type: str
-    flags: list[str]
     reason: str
 
 

@@ -16,6 +16,7 @@ input/output contract won't need to change when that's wired in.
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from .guardrails import evaluate_guardrails
 from .rules import evaluate_rules, resolve_verdict
 from .state import ClaimState, make_audit_event
 
@@ -28,11 +29,6 @@ REQUIRED_FIELDS = (
     "billed_amount",
     "procedure_codes",
 )
-
-# Hard safety ceiling enforced independently of whatever business rules
-# said -- deliberately decoupled from rules.py's thresholds.
-HARD_APPROVAL_CEILING = Decimal("5000")
-MIN_CONFIDENCE_FOR_AUTO_DECISION = 0.75
 
 RECOMMENDATION_BY_VERDICT: dict[str, str] = {
     "auto_approve": "approve",
@@ -106,6 +102,13 @@ def extraction_node(state: ClaimState) -> dict[str, Any]:
     }
 
 
+# Deterministic placeholder for providers with a standing manual-review
+# requirement (e.g. a hospital under active fraud investigation or a
+# facility-specific contractual carve-out). Swap for a real hospital-rules
+# lookup later without changing retrieval_node's contract.
+HOSPITAL_OVERRIDE_PROVIDER_IDS: frozenset[str] = frozenset({"prov-flagged-1", "prov-flagged-2"})
+
+
 def _retrieve_context(extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
     """Deterministic stand-in for a future Qdrant-backed retriever."""
     claim_type = extracted_data.get("claim_type")
@@ -129,6 +132,16 @@ def _retrieve_context(extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
                 "network_status": "in_network",
             }
         )
+
+        if provider_id in HOSPITAL_OVERRIDE_PROVIDER_IDS:
+            context.append(
+                {
+                    "source": "hospital_rules",
+                    "provider_id": provider_id,
+                    "forces_human_review": True,
+                    "reason": "This provider is subject to a standing manual-review requirement.",
+                }
+            )
 
     return context
 
@@ -209,45 +222,42 @@ def reasoning_node(state: ClaimState) -> dict[str, Any]:
 
 
 def guardrail_node(state: ClaimState) -> dict[str, Any]:
-    reasoning_output = state.get("reasoning_output") or {}
+    """Gates automatic processing behind 8 independent deterministic checks
+    (see guardrails.py). All 8 must pass; a single failure routes the
+    claim to a human. Checks always run to completion so the audit trail
+    captures every reason a claim was blocked, not just the first.
+    """
     extracted_data = state.get("extracted_data") or {}
+    applicable_rules = state.get("applicable_rules") or []
+    retrieved_context = state.get("retrieved_context") or []
+    reasoning_output = state.get("reasoning_output") or {}
 
     recommendation_type = reasoning_output.get("recommendation_type", "escalate")
     confidence_score = reasoning_output.get("confidence_score", 0.0)
 
-    try:
-        raw_amount = extracted_data.get("billed_amount")
-        billed_amount = Decimal(raw_amount) if raw_amount is not None else None
-    except InvalidOperation:
-        billed_amount = None
+    checks = evaluate_guardrails(
+        extracted_data=extracted_data,
+        applicable_rules=applicable_rules,
+        retrieved_context=retrieved_context,
+        recommendation_type=recommendation_type,
+        confidence_score=confidence_score,
+    )
+    failed = [c for c in checks if not c.passed]
+    passed = not failed
 
-    flags: list[str] = []
-    final_recommendation_type = recommendation_type
-
-    if recommendation_type == "approve" and billed_amount is not None and billed_amount > HARD_APPROVAL_CEILING:
-        flags.append("approval_ceiling_exceeded")
-        final_recommendation_type = "escalate"
-
-    if recommendation_type in ("approve", "deny") and confidence_score < MIN_CONFIDENCE_FOR_AUTO_DECISION:
-        flags.append("confidence_below_threshold")
-        final_recommendation_type = "escalate"
-
-    if recommendation_type == "flag_for_fraud":
-        # Fraud flags always require a human -- never auto-processed.
-        flags.append("fraud_requires_human_review")
-        final_recommendation_type = "escalate"
-
-    passed = not flags
     reason = (
-        "Recommendation cleared all guardrails."
+        "All guardrails passed; eligible for automatic processing."
         if passed
-        else f"Guardrail(s) triggered: {', '.join(flags)}."
+        else "Guardrail(s) failed: " + "; ".join(f"{c.name} ({c.reason})" for c in failed)
     )
 
     guardrail_result = {
         "passed": passed,
-        "final_recommendation_type": final_recommendation_type,
-        "flags": flags,
+        "checks": [{"name": c.name, "passed": c.passed, "reason": c.reason} for c in checks],
+        "failed_checks": [c.name for c in failed],
+        # Only a clean pass of every check yields "approve" -- there is no
+        # automatic path for anything else, denials included.
+        "final_recommendation_type": "approve" if passed else "escalate",
         "reason": reason,
     }
 
@@ -255,7 +265,7 @@ def guardrail_node(state: ClaimState) -> dict[str, Any]:
         node="guardrail_node",
         event_type="guardrail_passed" if passed else "guardrail_triggered",
         description=reason,
-        data={"flags": flags, "final_recommendation_type": final_recommendation_type},
+        data={"failed_checks": [c.name for c in failed], "checks_run": len(checks)},
     )
 
     return {
@@ -265,18 +275,19 @@ def guardrail_node(state: ClaimState) -> dict[str, Any]:
 
 
 def auto_process_node(state: ClaimState) -> dict[str, Any]:
+    """Only ever reached with an "approve" recommendation -- guardrail_node
+    categorically blocks denials and every other outcome from this path
+    (see guardrails.NON_ADVERSE_RECOMMENDATION_TYPES). The fallback below
+    exists purely as a defensive backstop should that invariant ever break;
+    it must never silently invent a decision.
+    """
     guardrail_result = state.get("guardrail_result") or {}
     recommendation_type = guardrail_result.get("final_recommendation_type")
 
     if recommendation_type == "approve":
         final_decision = "approved"
         claim_status = "approved"
-    elif recommendation_type == "deny":
-        final_decision = "denied"
-        claim_status = "denied"
     else:
-        # Defensive fallback: this node should only be reached for
-        # approve/deny, but it must never silently invent a decision.
         final_decision = "pending"
         claim_status = "pending_adjuster_review"
 
