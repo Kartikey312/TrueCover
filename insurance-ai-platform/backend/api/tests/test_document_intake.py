@@ -72,6 +72,12 @@ async def test_text_document_fills_missing_fields_and_auto_processes(client, see
     body = submitted.json()
     assert body["status"] == "approved"
     assert body["final_decision"] == "approved"
+    # The claim's own columns must reflect what was actually used to
+    # decide it -- not just the review packet's extracted_fields -- so a
+    # member or adjuster looking at the claim record itself doesn't see
+    # "no billed amount" on an approved claim.
+    assert body["billed_amount"] == "100.00"
+    assert body["procedure_codes"] == ["D1110"]
 
     review = (await client.get(f"/claims/{claim['claim_id']}/review")).json()
     assert review["extracted_fields"]["billed_amount"] == "100.00"

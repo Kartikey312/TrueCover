@@ -8,6 +8,7 @@ or refreshed decision can never be applied twice.
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -91,6 +92,29 @@ async def _build_raw_input(db: AsyncSession, claim: Claim) -> dict[str, Any]:
     }
 
 
+def _backfill_extracted_fields(claim: Claim, extracted_data: dict[str, Any]) -> None:
+    """extraction_node may have filled billed_amount/procedure_codes/
+    diagnosis_codes from a document's text (Phase 2 intake) rather than
+    from what the claim was created with. Whatever it landed on is
+    authoritative -- explicit input already won inside extraction_node's
+    own merge -- so write it back onto the claim's own columns. Without
+    this, a claim processed entirely from an uploaded document keeps
+    showing as if it had no billed amount or procedure codes at all,
+    even after being approved using exactly those values.
+    """
+    raw_amount = extracted_data.get("billed_amount")
+    if raw_amount:
+        try:
+            claim.billed_amount = Decimal(str(raw_amount))
+        except InvalidOperation:
+            pass
+
+    if extracted_data.get("procedure_codes"):
+        claim.procedure_codes = list(extracted_data["procedure_codes"])
+    if extracted_data.get("diagnosis_codes"):
+        claim.diagnosis_codes = list(extracted_data["diagnosis_codes"])
+
+
 async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Claim:
     """Runs the claim through the AI pipeline. Stores the graph thread id
     on the claim either way; if the graph pauses, the claim is queued for
@@ -123,6 +147,7 @@ async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Clai
     reasoning_output = result.get("reasoning_output") or {}
     guardrail_result = result.get("guardrail_result") or {}
     extracted_data = result.get("extracted_data") or {}
+    _backfill_extracted_fields(claim, extracted_data)
     retrieved_context = result.get("retrieved_context") or []
     applicable_rules = result.get("applicable_rules") or []
     matched_rules = [r for r in applicable_rules if r.get("matched")]
