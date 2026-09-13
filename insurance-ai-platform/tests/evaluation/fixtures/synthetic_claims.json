@@ -1,0 +1,327 @@
+[
+  {
+    "case_id": "clean_dental_low_value",
+    "description": "Routine dental cleaning, documented, in-network, low value.",
+    "raw_input": {
+      "claim_id": "EVAL-1",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "dental",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "100.00",
+      "procedure_codes": [
+        "D1110"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "Routine, fully documented, low-value dental visit -- any adjuster approves this."
+  },
+  {
+    "case_id": "clean_vision_low_value",
+    "description": "Routine eye exam, documented, in-network, low value.",
+    "raw_input": {
+      "claim_id": "EVAL-2",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "vision",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "80.00",
+      "procedure_codes": [
+        "92014"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "Routine, fully documented, low-value vision visit."
+  },
+  {
+    "case_id": "dental_at_cap_boundary",
+    "description": "Dental claim exactly at the $300 auto-processing cap boundary.",
+    "raw_input": {
+      "claim_id": "EVAL-3",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "dental",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "299.99",
+      "procedure_codes": [
+        "D2740"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "Still a routine, well-documented dental procedure just under the cap."
+  },
+  {
+    "case_id": "dental_over_cap",
+    "description": "Otherwise-clean dental claim just over the $300 auto-processing cap.",
+    "raw_input": {
+      "claim_id": "EVAL-4",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "dental",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "301.00",
+      "procedure_codes": [
+        "D2750"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "A crown at $301 is unremarkable and would be approved -- this case exists to confirm the system safely escalates it instead of auto-processing (a 'safe inefficiency', not a violation)."
+  },
+  {
+    "case_id": "medical_low_value_clean",
+    "description": "Clean, low-value, fully documented medical office visit.",
+    "raw_input": {
+      "claim_id": "EVAL-5",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "medical",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "100.00",
+      "procedure_codes": [
+        "99213"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "Routine office visit -- would be approved, but medical is deliberately not auto-eligible yet."
+  },
+  {
+    "case_id": "medical_missing_docs",
+    "description": "Medical claim with no supporting documents.",
+    "raw_input": {
+      "claim_id": "EVAL-6",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "medical",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "150.00",
+      "procedure_codes": [
+        "99213"
+      ],
+      "documents": []
+    },
+    "ground_truth_decision": "pending",
+    "ground_truth_rationale": "An adjuster would hold this for more information, not pay or deny outright."
+  },
+  {
+    "case_id": "behavioral_health_dental",
+    "description": "Dental claim where the member's diagnosis code happens to be a behavioral health code.",
+    "raw_input": {
+      "claim_id": "EVAL-7",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "dental",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "100.00",
+      "procedure_codes": [
+        "D1110"
+      ],
+      "diagnosis_codes": [
+        "F41.1"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "The dental service itself is routine and unrelated to the incidental behavioral health code -- would be approved, but the system is conservative about any behavioral health code by design."
+  },
+  {
+    "case_id": "out_of_network_high_value_fraud",
+    "description": "Higher-value claim at an out-of-network provider.",
+    "raw_input": {
+      "claim_id": "EVAL-8",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-out-of-network",
+      "claim_type": "medical",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "2000.00",
+      "procedure_codes": [
+        "99215"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "denied",
+    "ground_truth_rationale": "Out-of-network at this value is a real fraud/leakage concern -- an adjuster would deny or refer for investigation."
+  },
+  {
+    "case_id": "out_of_network_low_value_dental",
+    "description": "Small out-of-network dental claim.",
+    "raw_input": {
+      "claim_id": "EVAL-9",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-out-of-network",
+      "claim_type": "dental",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "50.00",
+      "procedure_codes": [
+        "D1110"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "Too small to be a meaningful fraud signal -- an adjuster approves this even out-of-network."
+  },
+  {
+    "case_id": "invalid_claim_type",
+    "description": "Malformed/unrecognized claim type (would be rejected by the API's schema; exercised here at the graph level to test extraction/rule behavior directly).",
+    "raw_input": {
+      "claim_id": "EVAL-10",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "not_a_real_type",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "100.00",
+      "procedure_codes": [
+        "99213"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "denied",
+    "ground_truth_rationale": "Not a recognized coverage category under any plan."
+  },
+  {
+    "case_id": "high_value_medical",
+    "description": "Legitimate high-value medical claim (e.g. a major procedure), fully documented.",
+    "raw_input": {
+      "claim_id": "EVAL-11",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "medical",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "15000.00",
+      "procedure_codes": [
+        "27447"
+      ],
+      "documents": [
+        "invoice.pdf",
+        "operative_report.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "A well-documented major procedure -- high value alone isn't a reason to deny, just to review."
+  },
+  {
+    "case_id": "exact_threshold_500_medical",
+    "description": "Medical claim at exactly the $500 global auto-approve rule boundary.",
+    "raw_input": {
+      "claim_id": "EVAL-12",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "medical",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "500.00",
+      "procedure_codes": [
+        "99214"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "Boundary case for the rule engine's <=500 condition -- checks the rule includes the boundary correctly."
+  },
+  {
+    "case_id": "hospital_override_medical",
+    "description": "Medical claim at a hospital with a negotiated higher auto-approve threshold.",
+    "raw_input": {
+      "claim_id": "EVAL-13",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-city-general",
+      "claim_type": "medical",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "1500.00",
+      "procedure_codes": [
+        "99214"
+      ],
+      "documents": [
+        "invoice.pdf"
+      ]
+    },
+    "rule_definitions": [
+      {
+        "rule_id": "eval-hosp-rule",
+        "rule_code": "EVAL-HOSPITAL-THRESHOLD",
+        "rule_type": "auto_approval",
+        "version": 1,
+        "priority": 50,
+        "source": "hospital",
+        "condition": {
+          "all": [
+            {
+              "field": "has_documents",
+              "op": "eq",
+              "value": true
+            },
+            {
+              "field": "out_of_network",
+              "op": "eq",
+              "value": false
+            },
+            {
+              "field": "billed_amount",
+              "op": "lte",
+              "value": 2000
+            }
+          ]
+        },
+        "action": "auto_approve",
+        "reason": "Negotiated contract allows auto-approval up to $2000 at this hospital."
+      }
+    ],
+    "ground_truth_decision": "approved",
+    "ground_truth_rationale": "Within this hospital's negotiated contract terms -- a legitimate approval."
+  },
+  {
+    "case_id": "missing_docs_dental_low_value",
+    "description": "Otherwise-clean, low-value dental claim with no documents attached.",
+    "raw_input": {
+      "claim_id": "EVAL-14",
+      "member_id": "m1",
+      "policy_id": "p1",
+      "provider_id": "prov-1",
+      "claim_type": "dental",
+      "date_of_service": "2026-08-01",
+      "billed_amount": "50.00",
+      "procedure_codes": [
+        "D1110"
+      ],
+      "documents": []
+    },
+    "ground_truth_decision": "pending",
+    "ground_truth_rationale": "Can't be paid without documentation regardless of how small the claim is."
+  }
+]

@@ -24,8 +24,9 @@ export function FraudIndicators({ packet }: { packet: ClaimReviewPacket }) {
           <ul className="space-y-2">
             {fraudRules.map((rule) => (
               <li key={rule.rule_code} className="rounded-md bg-red-50 p-3 text-sm ring-1 ring-inset ring-red-200">
-                <div className="font-medium text-red-800">
+                <div className="flex items-center gap-2 font-medium text-red-800">
                   {rule.rule_code} · {titleCase(rule.rule_type)}
+                  <Badge tone={rule.source === "hospital" ? "warning" : "neutral"}>{rule.source}</Badge>
                 </div>
                 <p className="mt-0.5 text-red-700">{rule.reason}</p>
               </li>

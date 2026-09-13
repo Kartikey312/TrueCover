@@ -20,7 +20,7 @@ from typing import Any
 from langgraph.types import interrupt
 
 from .guardrails import evaluate_guardrails
-from .rules import evaluate_rules, resolve_verdict
+from .rules import DEFAULT_GLOBAL_RULES, evaluate_rules, resolve_verdict, rule_from_dict
 from .state import ClaimState, make_audit_event
 
 CLAIM_STATUS_BY_FINAL_DECISION: dict[str, str] = {
@@ -117,6 +117,12 @@ def extraction_node(state: ClaimState) -> dict[str, Any]:
 # lookup later without changing retrieval_node's contract.
 HOSPITAL_OVERRIDE_PROVIDER_IDS: frozenset[str] = frozenset({"prov-flagged-1", "prov-flagged-2"})
 
+# Same idea for network status: real network status comes from a provider
+# directory that doesn't exist yet, so a fixed set of known-out-of-network
+# ids lets fraud-detection rules (and tests/evaluation fixtures) exercise
+# that path deterministically. Every other provider defaults to in-network.
+OUT_OF_NETWORK_PROVIDER_IDS: frozenset[str] = frozenset({"prov-out-of-network"})
+
 
 def _retrieve_context(extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
     """Deterministic stand-in for a future Qdrant-backed retriever."""
@@ -138,7 +144,7 @@ def _retrieve_context(extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
                 "provider_id": provider_id,
                 # Deterministic placeholder: unknown providers default to
                 # in-network until the real directory lookup is wired in.
-                "network_status": "in_network",
+                "network_status": "out_of_network" if provider_id in OUT_OF_NETWORK_PROVIDER_IDS else "in_network",
             }
         )
 
@@ -173,27 +179,50 @@ def retrieval_node(state: ClaimState) -> dict[str, Any]:
 
 
 def rule_resolution_node(state: ClaimState) -> dict[str, Any]:
+    """Resolves which rule (hospital-scoped, then global) governs this
+    claim. `rule_definitions` is supplied by the caller from Postgres --
+    active rules for this claim's provider plus the global set; absent
+    means "use the hardcoded DEFAULT_GLOBAL_RULES" (graph-only tests).
+    """
     extracted_data = state.get("extracted_data") or {}
     context = state.get("retrieved_context") or []
 
-    rule_results = evaluate_rules(extracted_data, context)
-    verdict = resolve_verdict(rule_results)
+    rule_definitions = state.get("rule_definitions")
+    rules = (
+        tuple(rule_from_dict(d) for d in rule_definitions) if rule_definitions is not None else DEFAULT_GLOBAL_RULES
+    )
+
+    rule_results = evaluate_rules(extracted_data, context, rules)
+    verdict, winning_rule = resolve_verdict(rule_results)
     matched = [r for r in rule_results if r["matched"]]
+
+    if winning_rule:
+        version_suffix = f" v{winning_rule['version']}" if winning_rule.get("version") else ""
+        description = (
+            f"Selected {winning_rule['source']} rule {winning_rule['rule_code']}{version_suffix}; "
+            f"verdict={verdict}."
+        )
+    else:
+        description = "No rules matched; verdict=no_match."
 
     event = make_audit_event(
         node="rule_resolution_node",
         event_type="rules_resolved",
-        description=(
-            f"{len(matched)} rule(s) matched; verdict={verdict}."
-            if matched
-            else "No rules matched; verdict=no_match."
-        ),
-        data={"matched_rules": [r["rule_code"] for r in matched], "verdict": verdict},
+        description=description,
+        data={
+            "matched_rules": [r["rule_code"] for r in matched],
+            "verdict": verdict,
+            "winning_rule_id": winning_rule.get("rule_id") if winning_rule else None,
+            "winning_rule_code": winning_rule.get("rule_code") if winning_rule else None,
+            "winning_rule_source": winning_rule.get("source") if winning_rule else None,
+            "winning_rule_version": winning_rule.get("version") if winning_rule else None,
+        },
     )
 
     return {
         "applicable_rules": rule_results,
         "rule_verdict": verdict,
+        "winning_rule": winning_rule,
         "audit_trail": [event],
     }
 

@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.graph_runtime import init_graph_runtime, shutdown_graph_runtime
-from app.routers import adjuster, claims
+from app.routers import adjuster, claims, rules
 
 
 @asynccontextmanager
@@ -28,6 +28,7 @@ app.add_middleware(
 
 app.include_router(claims.router)
 app.include_router(adjuster.router)
+app.include_router(rules.router)
 
 
 @app.get("/health")

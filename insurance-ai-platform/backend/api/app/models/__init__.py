@@ -8,6 +8,8 @@ from app.models.claim_document import ClaimDocument
 from app.models.member import Member
 from app.models.policy import Policy
 from app.models.provider import ProviderHospital
+from app.models.rule import Rule
+from app.models.rule_approval import RuleApproval
 from app.models.user import User
 
 __all__ = [
@@ -21,5 +23,7 @@ __all__ = [
     "Member",
     "Policy",
     "ProviderHospital",
+    "Rule",
+    "RuleApproval",
     "User",
 ]

@@ -33,7 +33,7 @@ from app.models.provider import ProviderHospital
 from app.schemas.decision import ClaimDecisionCreate
 from app.schemas.review import ClaimReviewPacket, SimilarClaimRead
 from app.schemas.timeline import TimelineEvent
-from app.services import audit_service
+from app.services import audit_service, rules_service
 from app.services.claims_service import get_claim, get_timeline
 
 SIMILAR_CLAIMS_LIMIT = 5
@@ -97,10 +97,14 @@ async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Clai
 
     thread_id = _thread_id_for(claim_id)
     raw_input = await _build_raw_input(db, claim)
+    rule_definitions = await rules_service.get_active_rules_for_provider(db, claim.provider_id)
 
     graph = get_compiled_graph()
     config = {"configurable": {"thread_id": thread_id}}
-    result = await graph.ainvoke({"claim_id": raw_input["claim_id"], "raw_input": raw_input}, config=config)
+    result = await graph.ainvoke(
+        {"claim_id": raw_input["claim_id"], "raw_input": raw_input, "rule_definitions": rule_definitions},
+        config=config,
+    )
 
     claim.current_graph_thread_id = thread_id
 

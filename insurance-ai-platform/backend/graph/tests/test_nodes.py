@@ -81,6 +81,22 @@ def test_retrieval_node_handles_missing_provider():
     assert len(result["retrieved_context"]) == 1
 
 
+def test_retrieval_node_flags_known_out_of_network_provider():
+    state = {"extracted_data": {"claim_type": "medical", "provider_id": "prov-out-of-network"}}
+    result = retrieval_node(state)
+
+    provider_entry = next(c for c in result["retrieved_context"] if c["source"] == "provider_directory")
+    assert provider_entry["network_status"] == "out_of_network"
+
+
+def test_retrieval_node_defaults_unknown_provider_to_in_network():
+    state = {"extracted_data": {"claim_type": "medical", "provider_id": "some-other-provider"}}
+    result = retrieval_node(state)
+
+    provider_entry = next(c for c in result["retrieved_context"] if c["source"] == "provider_directory")
+    assert provider_entry["network_status"] == "in_network"
+
+
 # --- rule_resolution_node --------------------------------------------------
 
 
@@ -93,7 +109,61 @@ def test_rule_resolution_node_surfaces_verdict_and_matches():
 
     assert result["rule_verdict"] == "auto_approve"
     assert any(r["matched"] for r in result["applicable_rules"])
+    assert result["winning_rule"]["rule_code"] == "AUTO-APPROVE-LOW-VALUE"
     assert result["audit_trail"][0]["event_type"] == "rules_resolved"
+    assert result["audit_trail"][0]["data"]["winning_rule_code"] == "AUTO-APPROVE-LOW-VALUE"
+    assert result["audit_trail"][0]["data"]["winning_rule_source"] == "global"
+
+
+def test_rule_resolution_node_falls_back_to_default_rules_when_no_rule_definitions_supplied():
+    state = {
+        "extracted_data": {"claim_type": "medical", "billed_amount": "2000.00", "documents": ["d"]},
+        "retrieved_context": [{"network_status": "in_network"}],
+    }
+    result = rule_resolution_node(state)
+
+    assert result["rule_verdict"] == "no_match"
+    assert result["winning_rule"] is None
+
+
+def test_rule_resolution_node_uses_supplied_hospital_rule_over_default_global_rules():
+    state = {
+        "extracted_data": {"claim_type": "medical", "billed_amount": "100.00", "documents": ["d"]},
+        "retrieved_context": [{"network_status": "in_network"}],
+        "rule_definitions": [
+            {
+                "rule_id": "hosp-rule-1",
+                "rule_code": "HOSP-ALWAYS-REVIEW",
+                "rule_type": "compliance",
+                "version": 1,
+                "priority": 10,
+                "source": "hospital",
+                "condition": {"field": "billed_amount", "op": "gte", "value": 0},
+                "action": "require_review",
+                "reason": "This hospital requires manual review of every claim.",
+            }
+        ],
+    }
+    result = rule_resolution_node(state)
+
+    assert result["rule_verdict"] == "require_review"
+    assert result["winning_rule"]["rule_code"] == "HOSP-ALWAYS-REVIEW"
+    assert result["winning_rule"]["source"] == "hospital"
+
+
+def test_rule_resolution_node_uses_empty_supplied_rule_set_instead_of_falling_back():
+    # An explicit empty list (a real "no active rules configured" answer
+    # from Postgres) must NOT be treated the same as "no rule_definitions
+    # key at all" (which falls back to the hardcoded defaults).
+    state = {
+        "extracted_data": {"claim_type": "medical", "billed_amount": "100.00", "documents": ["d"]},
+        "retrieved_context": [{"network_status": "in_network"}],
+        "rule_definitions": [],
+    }
+    result = rule_resolution_node(state)
+
+    assert result["rule_verdict"] == "no_match"
+    assert result["applicable_rules"] == []
 
 
 # --- reasoning_node --------------------------------------------------------

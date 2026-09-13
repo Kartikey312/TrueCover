@@ -37,8 +37,12 @@ def make_audit_event(
 
 
 class RuleResult(TypedDict):
+    rule_id: str | None
     rule_code: str
     rule_type: str
+    version: int | None
+    source: Literal["global", "hospital"]
+    priority: int
     matched: bool
     action: str | None
     reason: str
@@ -77,6 +81,13 @@ class ClaimState(TypedDict, total=False):
     claim_id: str
     raw_input: dict[str, Any]
 
+    # Active rules for this claim (global + the claim's hospital, already
+    # filtered to status='active'), supplied by the caller from Postgres.
+    # Absent (key missing) means "use rules.DEFAULT_GLOBAL_RULES" -- an
+    # empty list is a real "no rules configured" answer, not a signal to
+    # fall back.
+    rule_definitions: list[dict[str, Any]]
+
     extracted_data: dict[str, Any]
     extraction_errors: list[str]
 
@@ -84,6 +95,7 @@ class ClaimState(TypedDict, total=False):
 
     applicable_rules: list[RuleResult]
     rule_verdict: str
+    winning_rule: RuleResult | None
 
     reasoning_output: ReasoningOutput
     guardrail_result: GuardrailResult

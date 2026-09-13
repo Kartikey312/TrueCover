@@ -19,6 +19,8 @@ class RuleMatchRead(BaseModel):
     rule_type: str
     action: str | None
     reason: str
+    source: str
+    priority: int
 
 
 class SimilarClaimRead(BaseModel):

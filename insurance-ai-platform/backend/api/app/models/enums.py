@@ -85,6 +85,30 @@ class ActorType(str, enum.Enum):
     ai_agent = "ai_agent"
 
 
+class RuleType(str, enum.Enum):
+    eligibility = "eligibility"
+    fraud_detection = "fraud_detection"
+    auto_approval = "auto_approval"
+    auto_denial = "auto_denial"
+    compliance = "compliance"
+    pricing = "pricing"
+
+
+class RuleStatus(str, enum.Enum):
+    draft = "draft"
+    pending_approval = "pending_approval"
+    active = "active"
+    deprecated = "deprecated"
+    rejected = "rejected"
+
+
+class ApprovalStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+    changes_requested = "changes_requested"
+
+
 class AIRecommendationType(str, enum.Enum):
     approve = "approve"
     deny = "deny"

@@ -122,6 +122,8 @@ export interface RuleMatchRead {
   rule_type: string;
   action: string | null;
   reason: string;
+  source: "global" | "hospital";
+  priority: number;
 }
 
 export interface SimilarClaimRead {
