@@ -18,6 +18,7 @@ node_modules/
 dist/
 build/
 .next/
+*.tsbuildinfo
 
 # Local file storage (uploaded claim documents)
 storage/

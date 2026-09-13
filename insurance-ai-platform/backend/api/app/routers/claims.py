@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -9,6 +10,7 @@ from app.schemas.claim import ClaimCreate, ClaimRead
 from app.schemas.decision import ClaimDecisionCreate
 from app.schemas.document import ClaimDocumentRead
 from app.schemas.recommendation import AIRecommendationRead
+from app.schemas.request_info import RequestInfoCreate
 from app.schemas.review import ClaimReviewPacket
 from app.schemas.timeline import TimelineEvent
 from app.services import claims_service, pipeline_service, storage_service
@@ -47,6 +49,24 @@ async def upload_document(
     )
 
 
+@router.get("/{claim_id}/documents", response_model=list[ClaimDocumentRead])
+async def list_documents(claim_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    return await claims_service.list_documents(db, claim_id)
+
+
+@router.get("/{claim_id}/documents/{document_id}/file")
+async def get_document_file(claim_id: uuid.UUID, document_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    document = await claims_service.get_document(db, claim_id, document_id)
+    # inline, not attachment -- the adjuster UI previews these in an
+    # <img>/<iframe>; "attachment" would force a download instead.
+    return FileResponse(
+        document.storage_path,
+        media_type=document.mime_type,
+        filename=document.file_name,
+        content_disposition_type="inline",
+    )
+
+
 @router.post("/{claim_id}/submit", response_model=ClaimRead)
 async def submit_claim(claim_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     """Runs the claim through the AI pipeline now that documents (if any)
@@ -74,3 +94,15 @@ async def record_decision(claim_id: uuid.UUID, payload: ClaimDecisionCreate, db:
 @router.get("/{claim_id}/recommendation", response_model=AIRecommendationRead)
 async def get_recommendation(claim_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return await claims_service.get_latest_recommendation(db, claim_id)
+
+
+@router.post("/{claim_id}/request-info", response_model=ClaimRead)
+async def request_more_information(
+    claim_id: uuid.UUID, payload: RequestInfoCreate, db: AsyncSession = Depends(get_db)
+):
+    """Marks the claim as waiting on the member for more information.
+    Leaves final_decision untouched and the graph paused -- there's no
+    member portal yet to receive this, so it's purely a queue-visibility
+    signal until a real request/response loop exists.
+    """
+    return await claims_service.request_more_information(db, claim_id, payload)

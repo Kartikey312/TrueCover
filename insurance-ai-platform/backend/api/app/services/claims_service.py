@@ -14,6 +14,7 @@ from app.models.member import Member
 from app.models.policy import Policy
 from app.models.provider import ProviderHospital
 from app.schemas.claim import ClaimCreate
+from app.schemas.request_info import RequestInfoCreate
 from app.services import audit_service
 
 
@@ -117,6 +118,56 @@ async def add_document(
     await db.commit()
     await db.refresh(document)
     return document
+
+
+async def list_documents(db: AsyncSession, claim_id: uuid.UUID) -> list[ClaimDocument]:
+    await get_claim(db, claim_id)
+
+    result = await db.execute(
+        select(ClaimDocument)
+        .where(ClaimDocument.claim_id == claim_id)
+        .order_by(ClaimDocument.uploaded_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_document(db: AsyncSession, claim_id: uuid.UUID, document_id: uuid.UUID) -> ClaimDocument:
+    await get_claim(db, claim_id)
+
+    document = await db.get(ClaimDocument, document_id)
+    if document is None or document.claim_id != claim_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Document {document_id} not found on claim {claim_id}")
+    return document
+
+
+async def request_more_information(db: AsyncSession, claim_id: uuid.UUID, payload: RequestInfoCreate) -> Claim:
+    claim = await get_claim(db, claim_id)
+
+    if claim.final_decision != FinalDecisionStatus.pending:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Claim {claim_id} already has a final decision ({claim.final_decision.value}); "
+            "cannot request more information.",
+        )
+
+    previous_status = claim.status
+    claim.status = ClaimStatus.pending_documents
+
+    await audit_service.record_event(
+        db,
+        entity_type="claim",
+        entity_id=claim.claim_id,
+        event_type="information_requested",
+        actor_type=ActorType.user,
+        actor_id=payload.requested_by,
+        description=payload.message,
+        old_value={"status": previous_status.value},
+        new_value={"status": claim.status.value},
+    )
+
+    await db.commit()
+    await db.refresh(claim)
+    return claim
 
 
 async def get_timeline(db: AsyncSession, claim_id: uuid.UUID) -> list[AuditEvent]:

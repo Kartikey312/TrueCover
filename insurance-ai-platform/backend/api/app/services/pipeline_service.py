@@ -27,6 +27,9 @@ from app.models.enums import (
     ClaimStatus,
     FinalDecisionStatus,
 )
+from app.models.member import Member
+from app.models.policy import Policy
+from app.models.provider import ProviderHospital
 from app.schemas.decision import ClaimDecisionCreate
 from app.schemas.review import ClaimReviewPacket, SimilarClaimRead
 from app.schemas.timeline import TimelineEvent
@@ -108,6 +111,8 @@ async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Clai
     guardrail_result = result.get("guardrail_result") or {}
     extracted_data = result.get("extracted_data") or {}
     retrieved_context = result.get("retrieved_context") or []
+    applicable_rules = result.get("applicable_rules") or []
+    matched_rules = [r for r in applicable_rules if r.get("matched")]
     is_paused = "__interrupt__" in result
 
     recommendation_type_raw = reasoning_output.get("recommendation_type", "escalate")
@@ -122,6 +127,7 @@ async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Clai
             "policy_citations": retrieved_context,
             "guardrail_checks": guardrail_result.get("checks", []),
             "guardrail_reason": guardrail_result.get("reason"),
+            "matched_rules": matched_rules,
         },
         model_name=reasoning_output.get("model_name") or "rules-engine-v1",
         status=AIRecommendationStatus.pending_review if is_paused else AIRecommendationStatus.accepted,
@@ -169,6 +175,10 @@ async def _get_similar_claims(db: AsyncSession, claim: Claim) -> list[Claim]:
 async def get_review_packet(db: AsyncSession, claim_id: uuid.UUID) -> ClaimReviewPacket:
     claim = await get_claim(db, claim_id)
 
+    member = await db.get(Member, claim.member_id)
+    policy = await db.get(Policy, claim.policy_id)
+    provider = await db.get(ProviderHospital, claim.provider_id) if claim.provider_id else None
+
     rec_result = await db.execute(
         select(AIRecommendation)
         .where(AIRecommendation.claim_id == claim_id)
@@ -186,6 +196,12 @@ async def get_review_packet(db: AsyncSession, claim_id: uuid.UUID) -> ClaimRevie
         claim_number=claim.claim_number,
         status=claim.status.value,
         graph_thread_id=claim.current_graph_thread_id,
+        member_name=f"{member.first_name} {member.last_name}" if member else "Unknown member",
+        policy_number=policy.policy_number if policy else "Unknown policy",
+        provider_name=provider.name if provider else None,
+        claim_type=claim.claim_type.value,
+        billed_amount=claim.billed_amount,
+        date_of_service=claim.date_of_service,
         extracted_fields=supporting_evidence.get("extracted_data", {}),
         policy_citations=supporting_evidence.get("policy_citations", []),
         similar_claims=[SimilarClaimRead.model_validate(c) for c in similar_claims],
@@ -194,6 +210,7 @@ async def get_review_packet(db: AsyncSession, claim_id: uuid.UUID) -> ClaimRevie
         reasoning=recommendation.reasoning if recommendation else None,
         guardrail_reason=supporting_evidence.get("guardrail_reason"),
         guardrail_checks=supporting_evidence.get("guardrail_checks", []),
+        matched_rules=supporting_evidence.get("matched_rules", []),
         audit_history=[TimelineEvent.model_validate(e) for e in audit_history],
     )
 

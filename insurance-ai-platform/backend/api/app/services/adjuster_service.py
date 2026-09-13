@@ -4,7 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.claim import Claim
-from app.models.enums import ClaimStatus
+from app.models.enums import ClaimStatus, UserRole
+from app.models.member import Member
+from app.models.user import User
 
 OPEN_STATUSES = [
     ClaimStatus.submitted,
@@ -14,8 +16,24 @@ OPEN_STATUSES = [
 ]
 
 
-async def get_queue(db: AsyncSession, adjuster_id: uuid.UUID | None) -> list[Claim]:
-    query = select(Claim).where(Claim.status.in_(OPEN_STATUSES))
+async def get_queue(db: AsyncSession, adjuster_id: uuid.UUID | None) -> list[dict]:
+    query = (
+        select(
+            Claim.claim_id,
+            Claim.claim_number,
+            Claim.member_id,
+            Member.first_name,
+            Member.last_name,
+            Claim.status,
+            Claim.claim_type,
+            Claim.billed_amount,
+            Claim.date_of_service,
+            Claim.submitted_at,
+            Claim.assigned_adjuster_id,
+        )
+        .join(Member, Member.member_id == Claim.member_id)
+        .where(Claim.status.in_(OPEN_STATUSES))
+    )
 
     if adjuster_id is not None:
         query = query.where(Claim.assigned_adjuster_id == adjuster_id)
@@ -24,5 +42,26 @@ async def get_queue(db: AsyncSession, adjuster_id: uuid.UUID | None) -> list[Cla
 
     query = query.order_by(Claim.submitted_at.asc())
 
-    result = await db.execute(query)
+    rows = (await db.execute(query)).all()
+    return [
+        {
+            "claim_id": row.claim_id,
+            "claim_number": row.claim_number,
+            "member_id": row.member_id,
+            "member_name": f"{row.first_name} {row.last_name}",
+            "status": row.status,
+            "claim_type": row.claim_type,
+            "billed_amount": row.billed_amount,
+            "date_of_service": row.date_of_service,
+            "submitted_at": row.submitted_at,
+            "assigned_adjuster_id": row.assigned_adjuster_id,
+        }
+        for row in rows
+    ]
+
+
+async def list_adjusters(db: AsyncSession) -> list[User]:
+    result = await db.execute(
+        select(User).where(User.role == UserRole.adjuster, User.is_active.is_(True)).order_by(User.full_name)
+    )
     return list(result.scalars().all())

@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -12,8 +13,10 @@ class AdjusterQueueItem(BaseModel):
     claim_id: uuid.UUID
     claim_number: str
     member_id: uuid.UUID
+    member_name: str
     status: ClaimStatus
     claim_type: ClaimType
+    billed_amount: Decimal | None
     date_of_service: date
     submitted_at: datetime
     assigned_adjuster_id: uuid.UUID | None
