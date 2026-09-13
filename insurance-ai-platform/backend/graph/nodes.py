@@ -8,11 +8,11 @@ is the one exception -- see its docstring.
 
 Extraction is deterministic. `raw_input` can supply structured fields
 directly, text parsed from an uploaded document (`document_text` --
-already-decoded text; converting a PDF's bytes to text is the caller's
-job, not the graph's), or both -- an explicit field always wins over a
-parsed one. OCR, vision, and audio transcription (scanned/image-only
-documents) are still out of scope until this text-based path is proven
-reliable. Policy-document retrieval is Qdrant-backed when the caller
+already-decoded text; converting a document's bytes to text, OCR
+included, is the caller's job, not the graph's -- see
+app.services.storage_service.extract_text), or both -- an explicit field
+always wins over a parsed one. Audio transcription is still out of
+scope. Policy-document retrieval is Qdrant-backed when the caller
 supplies `policy_context` (see pipeline_service._fetch_policy_context);
 provider network status and hospital-override lookups are still
 deterministic stand-ins for directories that don't exist yet.

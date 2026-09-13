@@ -125,17 +125,17 @@ export function NewClaimForm() {
 
       <label className="block text-sm">
         <span className="mb-1 block font-medium text-slate-700">
-          Upload your invoice or claim form (PDF or text)
+          Upload your invoice or claim form (PDF, photo, or text)
         </span>
         <input
           type="file"
           multiple
-          accept=".pdf,.txt,application/pdf,text/plain"
+          accept=".pdf,.txt,.png,.jpg,.jpeg,application/pdf,text/plain,image/png,image/jpeg"
           onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
           className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
         />
         <span className="mt-1 block text-xs text-slate-500">
-          We'll read the amount and procedure codes off this if you didn't enter them above.
+          A clear photo works too -- we'll read the amount and procedure codes off it if you didn't enter them above.
         </span>
       </label>
 

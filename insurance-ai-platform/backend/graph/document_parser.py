@@ -1,10 +1,12 @@
 """Deterministic field extraction from claim document text.
 
-This is the text/PDF intake step: given already-decoded text (a PDF's
-embedded text, or a plain-text claim form), pull out the structured
-fields extraction_node needs via labeled-line pattern matching -- no OCR,
-no vision models, no LLM call. Scanned/image-only documents (which need
-real OCR) are still out of scope, same as before.
+This is the text intake step: given already-decoded text, pull out the
+structured fields extraction_node needs via labeled-line pattern
+matching -- no OCR, no vision models, no LLM call here. That text may
+have come from a PDF's embedded text layer, a plain-text claim form, or
+Tesseract OCR run on an image/scanned-PDF upload (see
+app.services.storage_service.extract_text) -- this module doesn't care
+which; by the time text reaches it, decoding is someone else's job.
 
 The parser only ever supplements -- extraction_node treats any field
 already present in raw_input as authoritative and never lets a parsed

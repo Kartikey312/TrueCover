@@ -5,6 +5,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# tesseract-ocr: OCR engine for image uploads and scanned (image-only) PDFs.
+# poppler-utils: rasterizes PDF pages to images for the scanned-PDF path
+# (pdf2image shells out to poppler's pdftoppm).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tesseract-ocr \
+        poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
