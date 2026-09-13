@@ -88,6 +88,13 @@ class ClaimState(TypedDict, total=False):
     # fall back.
     rule_definitions: list[dict[str, Any]]
 
+    # Policy-document chunks retrieved from Qdrant for this claim's plan
+    # and claim type, supplied by the caller. None (key absent) means "not
+    # supplied" -- retrieval_node then falls back to a generic placeholder
+    # sentence (graph-only tests). An empty list is a real "nothing
+    # relevant found" answer, not a signal to fall back.
+    policy_context: list[dict[str, Any]] | None
+
     extracted_data: dict[str, Any]
     extraction_errors: list[str]
 

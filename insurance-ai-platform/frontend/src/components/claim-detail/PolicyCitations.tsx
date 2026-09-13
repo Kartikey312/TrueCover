@@ -15,6 +15,14 @@ export function PolicyCitations({ citations }: { citations: PolicyCitation[] }) 
                 {citation.source.replace(/_/g, " ")}
               </div>
               {citation.text && <p className="text-slate-700">{citation.text}</p>}
+              {citation.citation && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {citation.citation.source_document}
+                  {citation.citation.section_title ? ` · ${citation.citation.section_title}` : ""}
+                  {` · page ${citation.citation.page_number}`}
+                  {typeof citation.score === "number" ? ` · relevance ${citation.score.toFixed(2)}` : ""}
+                </p>
+              )}
               {citation.network_status && (
                 <p className="mt-1 text-slate-500">
                   Network status: <span className="font-medium text-slate-700">{citation.network_status}</span>

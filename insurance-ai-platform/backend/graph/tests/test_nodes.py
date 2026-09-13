@@ -167,6 +167,31 @@ def test_retrieval_node_defaults_unknown_provider_to_in_network():
     assert provider_entry["network_status"] == "in_network"
 
 
+def test_retrieval_node_uses_supplied_policy_context_chunks_when_present():
+    state = {
+        "extracted_data": {"claim_type": "dental"},
+        "policy_context": [
+            {"text": "Dental cleanings are covered twice per year.", "score": 0.87, "citation": {"page_number": 3}}
+        ],
+    }
+    result = retrieval_node(state)
+
+    policy_entry = next(c for c in result["retrieved_context"] if c["source"] == "policy_knowledge")
+    assert policy_entry["text"] == "Dental cleanings are covered twice per year."
+    assert policy_entry["score"] == 0.87
+    assert policy_entry["citation"] == {"page_number": 3}
+
+
+def test_retrieval_node_reports_no_match_for_empty_policy_context():
+    """An empty list from the caller is a real 'nothing found' answer,
+    distinct from not having supplied policy_context at all."""
+    state = {"extracted_data": {"claim_type": "dental"}, "policy_context": []}
+    result = retrieval_node(state)
+
+    policy_entry = next(c for c in result["retrieved_context"] if c["source"] == "coverage_policy")
+    assert "No policy-document sections matched" in policy_entry["text"]
+
+
 # --- rule_resolution_node --------------------------------------------------
 
 

@@ -137,6 +137,16 @@ export interface SimilarClaimRead {
   submitted_at: string;
 }
 
+export interface PolicyCitationDetail {
+  source_document: string;
+  document_type: string;
+  page_number: number;
+  section_title: string | null;
+  plan_id: string;
+  state: string;
+  effective_date: string;
+}
+
 export interface PolicyCitation {
   source: string;
   text?: string;
@@ -145,6 +155,8 @@ export interface PolicyCitation {
   network_status?: string;
   forces_human_review?: boolean;
   reason?: string;
+  score?: number;
+  citation?: PolicyCitationDetail;
   [key: string]: unknown;
 }
 

@@ -6,6 +6,7 @@ adjuster's explicit decision -- with idempotency protection so a retried
 or refreshed decision can never be applied twice.
 """
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -34,7 +35,7 @@ from app.models.provider import ProviderHospital
 from app.schemas.decision import ClaimDecisionCreate
 from app.schemas.review import ClaimReviewPacket, SimilarClaimRead
 from app.schemas.timeline import TimelineEvent
-from app.services import audit_service, rules_service
+from app.services import audit_service, policy_retrieval_service, rules_service
 from app.services.claims_service import get_claim, get_timeline
 
 SIMILAR_CLAIMS_LIMIT = 5
@@ -132,10 +133,26 @@ async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Clai
     raw_input = await _build_raw_input(db, claim)
     rule_definitions = await rules_service.get_active_rules_for_provider(db, claim.provider_id)
 
+    policy = await db.get(Policy, claim.policy_id)
+    policy_context = None
+    if policy is not None:
+        # Qdrant search + embedding are blocking calls; run off the event
+        # loop so a slow or unreachable Qdrant can't stall other requests.
+        policy_context = await asyncio.to_thread(
+            policy_retrieval_service.fetch_policy_context,
+            plan_name=policy.plan_name,
+            claim_type=raw_input["claim_type"],
+        )
+
     graph = get_compiled_graph()
     config = {"configurable": {"thread_id": thread_id}}
     result = await graph.ainvoke(
-        {"claim_id": raw_input["claim_id"], "raw_input": raw_input, "rule_definitions": rule_definitions},
+        {
+            "claim_id": raw_input["claim_id"],
+            "raw_input": raw_input,
+            "rule_definitions": rule_definitions,
+            "policy_context": policy_context,
+        },
         config=config,
     )
 

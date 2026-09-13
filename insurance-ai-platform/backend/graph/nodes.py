@@ -12,9 +12,10 @@ already-decoded text; converting a PDF's bytes to text is the caller's
 job, not the graph's), or both -- an explicit field always wins over a
 parsed one. OCR, vision, and audio transcription (scanned/image-only
 documents) are still out of scope until this text-based path is proven
-reliable. Retrieval is a hardcoded stand-in for a future Qdrant-backed
-lookup; the node's input/output contract won't need to change when
-that's wired in.
+reliable. Policy-document retrieval is Qdrant-backed when the caller
+supplies `policy_context` (see pipeline_service._fetch_policy_context);
+provider network status and hospital-override lookups are still
+deterministic stand-ins for directories that don't exist yet.
 """
 
 from decimal import Decimal, InvalidOperation
@@ -155,18 +156,55 @@ HOSPITAL_OVERRIDE_PROVIDER_IDS: frozenset[str] = frozenset({"prov-flagged-1", "p
 OUT_OF_NETWORK_PROVIDER_IDS: frozenset[str] = frozenset({"prov-out-of-network"})
 
 
-def _retrieve_context(extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Deterministic stand-in for a future Qdrant-backed retriever."""
+def _policy_context_items(
+    claim_type: str | None, policy_chunks: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
+    """Builds the policy/coverage-terms portion of retrieved context.
+
+    `policy_chunks` are real Qdrant search results supplied by the caller
+    (see pipeline_service._fetch_policy_context). None means the caller
+    didn't run a retrieval at all (graph-only tests, or Qdrant unreachable)
+    -- fall back to a generic placeholder sentence, same as before Qdrant
+    was wired in. An empty list is a real "nothing relevant found" answer.
+    """
+    if policy_chunks is None:
+        return [
+            {
+                "source": "coverage_policy",
+                "claim_type": claim_type,
+                "text": f"Standard coverage terms apply to {claim_type or 'unknown'} claims.",
+            }
+        ]
+
+    if not policy_chunks:
+        return [
+            {
+                "source": "coverage_policy",
+                "claim_type": claim_type,
+                "text": f"No policy-document sections matched {claim_type or 'this'} claims; "
+                "standard coverage terms apply.",
+            }
+        ]
+
+    return [
+        {
+            "source": "policy_knowledge",
+            "claim_type": claim_type,
+            "text": chunk.get("text", ""),
+            "score": chunk.get("score"),
+            "citation": chunk.get("citation"),
+        }
+        for chunk in policy_chunks
+    ]
+
+
+def _retrieve_context(
+    extracted_data: dict[str, Any], policy_chunks: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
     claim_type = extracted_data.get("claim_type")
     provider_id = extracted_data.get("provider_id")
 
-    context: list[dict[str, Any]] = [
-        {
-            "source": "coverage_policy",
-            "claim_type": claim_type,
-            "text": f"Standard coverage terms apply to {claim_type or 'unknown'} claims.",
-        }
-    ]
+    context: list[dict[str, Any]] = _policy_context_items(claim_type, policy_chunks)
 
     if provider_id:
         context.append(
@@ -194,7 +232,8 @@ def _retrieve_context(extracted_data: dict[str, Any]) -> list[dict[str, Any]]:
 
 def retrieval_node(state: ClaimState) -> dict[str, Any]:
     extracted_data = state.get("extracted_data") or {}
-    context = _retrieve_context(extracted_data)
+    policy_chunks = state.get("policy_context")
+    context = _retrieve_context(extracted_data, policy_chunks)
 
     event = make_audit_event(
         node="retrieval_node",

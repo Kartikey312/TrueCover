@@ -1,6 +1,6 @@
 # Build context is ./backend (the parent of this directory), not ./backend/api,
-# because this image needs both api/app and the sibling graph/ package --
-# see docker-compose.yml's `build.context` for the api service.
+# because this image needs both api/app and the sibling graph/ and qdrant/
+# packages -- see docker-compose.yml's `build.context` for the api service.
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/app ./app
 COPY graph/*.py ./graph/
+COPY qdrant/*.py ./qdrant/
 
 EXPOSE 8000
 

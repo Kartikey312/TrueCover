@@ -87,6 +87,24 @@ async def _recreate_test_database() -> None:
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
+async def _stub_policy_retrieval():
+    """Real policy retrieval hits a live Qdrant server and lazily downloads
+    an embedding model on first use -- neither is available or desirable
+    in this test run. Every test here exercises the same fallback path a
+    real Qdrant outage takes (policy_context=None -> retrieval_node's
+    placeholder); the Qdrant-backed path itself is covered by
+    backend/qdrant's own test suite and graph/tests/test_nodes.py's
+    retrieval_node tests.
+    """
+    from app.services import policy_retrieval_service
+
+    original = policy_retrieval_service.fetch_policy_context
+    policy_retrieval_service.fetch_policy_context = lambda **kwargs: None
+    yield
+    policy_retrieval_service.fetch_policy_context = original
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def _database():
     await _recreate_test_database()
     yield
