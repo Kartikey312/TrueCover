@@ -15,7 +15,7 @@ from app.models.policy import Policy
 from app.models.provider import ProviderHospital
 from app.schemas.claim import ClaimCreate
 from app.schemas.request_info import RequestInfoCreate
-from app.services import audit_service
+from app.services import audit_service, storage_service
 
 
 async def _next_claim_number(db: AsyncSession) -> str:
@@ -99,6 +99,7 @@ async def add_document(
         storage_path=storage_path,
         mime_type=mime_type,
         file_size_bytes=file_size_bytes,
+        ocr_extracted_text=storage_service.extract_text(storage_path, mime_type),
         uploaded_by=uploaded_by,
     )
     db.add(document)

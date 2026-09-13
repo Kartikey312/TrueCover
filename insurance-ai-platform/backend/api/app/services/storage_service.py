@@ -2,8 +2,39 @@ import uuid
 from pathlib import Path
 
 from fastapi import UploadFile
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 from app.config import settings
+
+
+def extract_text(storage_path: str, mime_type: str | None) -> str | None:
+    """Best-effort text extraction for claim intake (Phase 2: text/PDF
+    only -- a PDF with embedded text, or a plain-text file). Scanned/
+    image-only documents need real OCR, which stays out of scope until
+    this path is proven reliable; they're just not extractable here.
+    Never raises -- a bad or unsupported file just yields no text, same
+    as a document nobody uploaded.
+    """
+    path = Path(storage_path)
+
+    if mime_type == "application/pdf":
+        try:
+            reader = PdfReader(str(path))
+            pages = [page.extract_text() or "" for page in reader.pages]
+            text = "\n".join(pages).strip()
+            return text or None
+        except (PdfReadError, OSError):
+            return None
+
+    if mime_type and mime_type.startswith("text/"):
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore").strip()
+            return text or None
+        except OSError:
+            return None
+
+    return None
 
 
 async def save_claim_document(claim_id: uuid.UUID, upload: UploadFile) -> tuple[str, int]:

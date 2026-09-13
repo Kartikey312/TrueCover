@@ -6,12 +6,15 @@ partial update into state), and appends one entry to `audit_trail` so the
 full pipeline history is reconstructable from state alone. human_review_node
 is the one exception -- see its docstring.
 
-Extraction here is deterministic and expects already-structured input
-(`raw_input` as a dict). OCR, vision, and audio transcription are future
-upgrades to extraction_node's input handling and are intentionally out of
-scope until the graph's mechanics are proven reliable. Retrieval is a
-hardcoded stand-in for a future Qdrant-backed lookup; the node's
-input/output contract won't need to change when that's wired in.
+Extraction is deterministic. `raw_input` can supply structured fields
+directly, text parsed from an uploaded document (`document_text` --
+already-decoded text; converting a PDF's bytes to text is the caller's
+job, not the graph's), or both -- an explicit field always wins over a
+parsed one. OCR, vision, and audio transcription (scanned/image-only
+documents) are still out of scope until this text-based path is proven
+reliable. Retrieval is a hardcoded stand-in for a future Qdrant-backed
+lookup; the node's input/output contract won't need to change when
+that's wired in.
 """
 
 from decimal import Decimal, InvalidOperation
@@ -19,6 +22,7 @@ from typing import Any
 
 from langgraph.types import interrupt
 
+from .document_parser import extract_fields_from_text
 from .guardrails import evaluate_guardrails
 from .rules import DEFAULT_GLOBAL_RULES, evaluate_rules, resolve_verdict, rule_from_dict
 from .state import ClaimState, make_audit_event
@@ -65,11 +69,33 @@ def _normalize_amount(value: Any) -> str | None:
         return None
 
 
-def extraction_node(state: ClaimState) -> dict[str, Any]:
-    """Validates and normalizes structured claim input."""
-    raw = state.get("raw_input") or {}
+_DOCUMENT_FILLABLE_FIELDS = ("claim_type", "date_of_service", "billed_amount", "procedure_codes", "diagnosis_codes")
 
-    normalized_amount = _normalize_amount(raw.get("billed_amount"))
+
+def _merge_document_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    """Fills gaps in raw_input from document_text, if present -- an
+    explicit, non-empty raw_input value always wins over a parsed one.
+    """
+    document_text = raw.get("document_text")
+    if not document_text:
+        return raw
+
+    parsed = extract_fields_from_text(document_text)
+    merged = dict(raw)
+    for field in _DOCUMENT_FILLABLE_FIELDS:
+        if not merged.get(field) and parsed.get(field):
+            merged[field] = parsed[field]
+    return merged
+
+
+def extraction_node(state: ClaimState) -> dict[str, Any]:
+    """Validates and normalizes claim input, filling any gaps from an
+    uploaded document's text before checking for missing required fields.
+    """
+    raw = state.get("raw_input") or {}
+    merged = _merge_document_fields(raw)
+
+    normalized_amount = _normalize_amount(merged.get("billed_amount"))
 
     errors: list[str] = []
     for field in REQUIRED_FIELDS:
@@ -77,31 +103,36 @@ def extraction_node(state: ClaimState) -> dict[str, Any]:
             if normalized_amount is None:
                 errors.append("billed_amount is missing or not a valid decimal")
             continue
-        if not raw.get(field):
+        if not merged.get(field):
             errors.append(f"Missing required field: {field}")
 
+    fields_from_document = sorted(f for f in _DOCUMENT_FILLABLE_FIELDS if not raw.get(f) and merged.get(f))
+
     extracted_data = {
-        "claim_id": raw.get("claim_id"),
-        "member_id": raw.get("member_id"),
-        "policy_id": raw.get("policy_id"),
-        "provider_id": raw.get("provider_id"),
-        "claim_type": raw.get("claim_type"),
-        "date_of_service": raw.get("date_of_service"),
+        "claim_id": merged.get("claim_id"),
+        "member_id": merged.get("member_id"),
+        "policy_id": merged.get("policy_id"),
+        "provider_id": merged.get("provider_id"),
+        "claim_type": merged.get("claim_type"),
+        "date_of_service": merged.get("date_of_service"),
         "billed_amount": normalized_amount,
-        "procedure_codes": list(raw.get("procedure_codes") or []),
-        "diagnosis_codes": list(raw.get("diagnosis_codes") or []),
-        "documents": list(raw.get("documents") or []),
+        "procedure_codes": list(merged.get("procedure_codes") or []),
+        "diagnosis_codes": list(merged.get("diagnosis_codes") or []),
+        "documents": list(merged.get("documents") or []),
     }
+
+    if errors:
+        description = f"Extraction failed: {'; '.join(errors)}"
+    elif fields_from_document:
+        description = f"Structured input extracted and normalized (from document text: {', '.join(fields_from_document)})."
+    else:
+        description = "Structured input extracted and normalized."
 
     event = make_audit_event(
         node="extraction_node",
         event_type="extraction_failed" if errors else "extraction_completed",
-        description=(
-            f"Extraction failed: {'; '.join(errors)}"
-            if errors
-            else "Structured input extracted and normalized."
-        ),
-        data={"errors": errors},
+        description=description,
+        data={"errors": errors, "fields_from_document": fields_from_document},
     )
 
     return {

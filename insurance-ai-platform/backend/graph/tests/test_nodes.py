@@ -64,6 +64,76 @@ def test_extraction_node_handles_missing_raw_input():
     assert result["extracted_data"]["claim_id"] is None
 
 
+def test_extraction_node_fills_missing_fields_from_document_text():
+    raw = {
+        "claim_id": "CLM-DOC-1",
+        "member_id": "member-1",
+        "policy_id": "policy-1",
+        "date_of_service": "2026-08-01",
+        "document_text": "Claim Type: dental\nTotal Billed: $150.00\nProcedure Codes: D1110\n",
+    }
+    result = extraction_node({"raw_input": raw})
+
+    assert result["extraction_errors"] == []
+    assert result["extracted_data"]["claim_type"] == "dental"
+    assert result["extracted_data"]["billed_amount"] == "150.00"
+    assert result["extracted_data"]["procedure_codes"] == ["D1110"]
+    assert result["audit_trail"][0]["data"]["fields_from_document"] == [
+        "billed_amount",
+        "claim_type",
+        "procedure_codes",
+    ]
+    assert "from document text" in result["audit_trail"][0]["description"]
+
+
+def test_extraction_node_explicit_fields_win_over_document_text():
+    raw = {
+        "claim_id": "CLM-DOC-2",
+        "member_id": "member-1",
+        "policy_id": "policy-1",
+        "claim_type": "vision",
+        "date_of_service": "2026-08-01",
+        "billed_amount": "80.00",
+        "procedure_codes": ["92014"],
+        "document_text": "Claim Type: dental\nTotal Billed: $999.00\nProcedure Codes: D1110\n",
+    }
+    result = extraction_node({"raw_input": raw})
+
+    assert result["extracted_data"]["claim_type"] == "vision"
+    assert result["extracted_data"]["billed_amount"] == "80.00"
+    assert result["extracted_data"]["procedure_codes"] == ["92014"]
+    assert result["audit_trail"][0]["data"]["fields_from_document"] == []
+
+
+def test_extraction_node_still_reports_errors_when_document_text_is_unhelpful():
+    raw = {
+        "claim_id": "CLM-DOC-3",
+        "member_id": "member-1",
+        "policy_id": "policy-1",
+        "claim_type": "dental",
+        "date_of_service": "2026-08-01",
+        "document_text": "This invoice has no labeled fields at all.\n",
+    }
+    result = extraction_node({"raw_input": raw})
+
+    assert any("billed_amount" in e for e in result["extraction_errors"])
+    assert any("procedure_codes" in e for e in result["extraction_errors"])
+
+
+def test_extraction_node_ignores_document_text_when_absent():
+    raw = {
+        "claim_id": "CLM-DOC-4",
+        "member_id": "member-1",
+        "policy_id": "policy-1",
+        "claim_type": "dental",
+        "date_of_service": "2026-08-01",
+        "billed_amount": "50.00",
+        "procedure_codes": ["D1110"],
+    }
+    result = extraction_node({"raw_input": raw})
+    assert result["audit_trail"][0]["data"]["fields_from_document"] == []
+
+
 # --- retrieval_node ------------------------------------------------------
 
 

@@ -63,11 +63,19 @@ async def _persist_new_audit_events(
 
 
 async def _build_raw_input(db: AsyncSession, claim: Claim) -> dict[str, Any]:
-    documents = (
-        (await db.execute(select(ClaimDocument.file_name).where(ClaimDocument.claim_id == claim.claim_id)))
-        .scalars()
-        .all()
-    )
+    rows = (
+        await db.execute(
+            select(ClaimDocument.file_name, ClaimDocument.ocr_extracted_text).where(
+                ClaimDocument.claim_id == claim.claim_id
+            )
+        )
+    ).all()
+    documents = [row.file_name for row in rows]
+    # Concatenated so extraction_node can fill any structured field still
+    # missing after the claim's own columns are applied -- an explicit
+    # value on the claim always wins over anything parsed from this text.
+    document_text = "\n".join(row.ocr_extracted_text for row in rows if row.ocr_extracted_text)
+
     return {
         "claim_id": str(claim.claim_id),
         "member_id": str(claim.member_id),
@@ -78,7 +86,8 @@ async def _build_raw_input(db: AsyncSession, claim: Claim) -> dict[str, Any]:
         "billed_amount": str(claim.billed_amount) if claim.billed_amount is not None else None,
         "procedure_codes": list(claim.procedure_codes or []),
         "diagnosis_codes": list(claim.diagnosis_codes or []),
-        "documents": list(documents),
+        "documents": documents,
+        "document_text": document_text or None,
     }
 
 

@@ -14,7 +14,11 @@ class ClaimCreate(BaseModel):
     claim_type: ClaimType
     date_of_service: date
     billed_amount: Decimal | None = Field(default=None, ge=0)
-    procedure_codes: list[str] = Field(..., min_length=1)
+    # Optional at creation: a claim can be filed with just a document
+    # attached (see POST /claims/{id}/documents) and these filled in from
+    # its text at submit time. Anything provided here is authoritative and
+    # is never overwritten by what's parsed from a document.
+    procedure_codes: list[str] = Field(default_factory=list)
     diagnosis_codes: list[str] = Field(default_factory=list)
 
 

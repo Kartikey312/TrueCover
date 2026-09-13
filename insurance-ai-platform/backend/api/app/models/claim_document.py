@@ -23,6 +23,11 @@ class ClaimDocument(Base):
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str | None] = mapped_column(String(100))
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    # Text pulled from a PDF/text upload at intake time (see
+    # storage_service.extract_text) -- feeds extraction_node's
+    # document_text field. Null for images/unsupported types or when
+    # nothing could be extracted.
+    ocr_extracted_text: Mapped[str | None] = mapped_column(Text)
     # Pointer only -- the embedding itself lives in Qdrant. Postgres remains
     # the source of truth for what documents exist on a claim.
     qdrant_point_id: Mapped[str | None] = mapped_column(String(255))
