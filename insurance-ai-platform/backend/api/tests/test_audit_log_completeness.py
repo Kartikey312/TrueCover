@@ -73,8 +73,8 @@ async def test_paused_and_resumed_claim_has_no_gap_or_duplicate_across_the_bound
 
     await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "denied",
             "reason": "Not covered.",
             "idempotency_key": str(uuid.uuid4()),

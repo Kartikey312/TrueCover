@@ -189,7 +189,6 @@ export interface ClaimReviewPacket {
 }
 
 export interface ClaimDecisionCreate {
-  decided_by: string;
   final_decision: Exclude<FinalDecisionStatus, "pending">;
   approved_amount?: string | null;
   reason: string;
@@ -197,8 +196,18 @@ export interface ClaimDecisionCreate {
 }
 
 export interface RequestInfoCreate {
-  requested_by: string;
   message: string;
+}
+
+export interface StaffLoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface StaffTokenResponse {
+  access_token: string;
+  token_type: string;
+  user: AdjusterRead;
 }
 
 export interface ApiErrorBody {

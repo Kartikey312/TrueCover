@@ -141,7 +141,9 @@ async def get_document(db: AsyncSession, claim_id: uuid.UUID, document_id: uuid.
     return document
 
 
-async def request_more_information(db: AsyncSession, claim_id: uuid.UUID, payload: RequestInfoCreate) -> Claim:
+async def request_more_information(
+    db: AsyncSession, claim_id: uuid.UUID, requested_by: uuid.UUID, payload: RequestInfoCreate
+) -> Claim:
     claim = await get_claim(db, claim_id)
 
     if claim.final_decision != FinalDecisionStatus.pending:
@@ -160,7 +162,7 @@ async def request_more_information(db: AsyncSession, claim_id: uuid.UUID, payloa
         entity_id=claim.claim_id,
         event_type="information_requested",
         actor_type=ActorType.user,
-        actor_id=payload.requested_by,
+        actor_id=requested_by,
         description=payload.message,
         old_value={"status": previous_status.value},
         new_value={"status": claim.status.value},

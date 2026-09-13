@@ -5,11 +5,11 @@ import { ClaimsList } from "../components/claims/ClaimsList";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { ErrorState, Spinner } from "../components/ui/Feedback";
-import { useMemberIdentity } from "../context/MemberContext";
+import { useMemberAuth } from "../context/MemberContext";
 
 export function MyClaimsPage() {
-  const { memberId } = useMemberIdentity();
-  const { data: claims, isLoading, isError } = useMemberClaims(memberId);
+  const { member } = useMemberAuth();
+  const { data: claims, isLoading, isError } = useMemberClaims(member!.member_id);
 
   return (
     <div className="space-y-4">
@@ -24,10 +24,9 @@ export function MyClaimsPage() {
       </div>
 
       <Card>
-        {!memberId && <ErrorState message="Select who you are (top right) to see your claims." />}
-        {memberId && isLoading && <Spinner label="Loading your claims…" />}
-        {memberId && isError && <ErrorState message="Could not load your claims." />}
-        {memberId && claims && <ClaimsList claims={claims} />}
+        {isLoading && <Spinner label="Loading your claims…" />}
+        {isError && <ErrorState message="Could not load your claims." />}
+        {claims && <ClaimsList claims={claims} />}
       </Card>
     </div>
   );

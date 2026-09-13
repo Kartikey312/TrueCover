@@ -2,6 +2,16 @@ import type { ApiErrorBody } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8010";
 
+// Set by AuthContext whenever the logged-in user's token changes. A plain
+// module-level variable (not a hook) because `request` below is called
+// from outside React too (query functions), and every request needs the
+// *current* token, not the one in scope when the function was defined.
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -26,6 +36,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...init?.headers,
     },
   });

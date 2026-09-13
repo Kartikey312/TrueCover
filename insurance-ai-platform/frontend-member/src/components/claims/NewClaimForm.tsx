@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "../../api/client";
 import { useFileClaim, useMemberPolicies, useProviders } from "../../api/queries";
 import type { ClaimType } from "../../api/types";
-import { useMemberIdentity } from "../../context/MemberContext";
+import { useMemberAuth } from "../../context/MemberContext";
 import { titleCase } from "../../lib/format";
 import { Button } from "../ui/Button";
 import { ErrorState } from "../ui/Feedback";
@@ -12,7 +12,8 @@ import { ErrorState } from "../ui/Feedback";
 const CLAIM_TYPES: ClaimType[] = ["medical", "dental", "vision", "pharmacy", "other"];
 
 export function NewClaimForm() {
-  const { memberId } = useMemberIdentity();
+  const { member } = useMemberAuth();
+  const memberId = member!.member_id;
   const navigate = useNavigate();
   const { data: policies } = useMemberPolicies(memberId);
   const { data: providers } = useProviders();
@@ -25,15 +26,10 @@ export function NewClaimForm() {
   const [billedAmount, setBilledAmount] = useState("");
   const [files, setFiles] = useState<File[]>([]);
 
-  if (!memberId) {
-    return <ErrorState message="Select who you are (top right) before filing a claim." />;
-  }
-
   const canSubmit = policyId && claimType && dateOfService && !fileClaim.isPending;
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!memberId) return;
 
     fileClaim.mutate(
       {

@@ -9,11 +9,6 @@ from app.models.member import Member
 from app.models.policy import Policy
 
 
-async def list_members(db: AsyncSession) -> list[Member]:
-    result = await db.execute(select(Member).order_by(Member.last_name, Member.first_name))
-    return list(result.scalars().all())
-
-
 async def get_member(db: AsyncSession, member_id: uuid.UUID) -> Member:
     member = await db.get(Member, member_id)
     if member is None:

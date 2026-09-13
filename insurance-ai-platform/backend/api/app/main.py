@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.graph_runtime import init_graph_runtime, shutdown_graph_runtime
-from app.routers import adjuster, claims, members, providers, rules
+from app.routers import adjuster, auth, claims, members, providers, rules
 
 
 @asynccontextmanager
@@ -17,8 +17,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Insurance AI Platform API", version="0.1.0", lifespan=lifespan)
 
 # The adjuster console and member portal frontends (Vite dev servers /
-# static builds) run on different origins than the API. No auth cookies
-# are in play yet, so an open CORS policy is fine for this stage.
+# static builds) run on different origins than the API. Identity travels
+# as a Bearer token in the Authorization header, not a cookie, so an open
+# CORS policy carries no CSRF/session-fixation risk here.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(claims.router)
 app.include_router(adjuster.router)
 app.include_router(rules.router)

@@ -27,8 +27,14 @@ os.environ["DATABASE_URL"] = _TEST_HOST_DSN.replace("postgresql://", "postgresql
 os.environ["STORAGE_ROOT"] = _STORAGE_DIR
 
 import asyncpg  # noqa: E402
+import bcrypt  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+
+# A low cost factor keeps per-test login fast -- this is only ever used
+# against the throwaway test database, never a real credential.
+SEED_PASSWORD = "test-password-123"
+_SEED_PASSWORD_HASH = bcrypt.hashpw(SEED_PASSWORD.encode("utf-8"), bcrypt.gensalt(rounds=4)).decode("utf-8")
 
 INIT_SQL_DIR = Path(__file__).resolve().parents[2] / "database" / "init"
 # Re-applied after every per-test TRUNCATE, since it seeds the `rules`
@@ -134,45 +140,60 @@ async def client(_database):
 
 
 @pytest_asyncio.fixture
-async def seed():
+async def seed(client):
     """A minimal, consistent world: one adjuster, one compliance officer,
     one engineer (role=admin, i.e. NOT compliance -- for testing that the
     approval gate rejects them), one member with an active policy, one
     hospital. Individual tests add whatever else they need (claims, rules,
     documents).
+
+    All three staff users share SEED_PASSWORD; `adjuster_headers` /
+    `compliance_headers` / `engineer_headers` are ready-to-use
+    Authorization headers from a real /auth/login call, since every
+    write action that records an actor now requires one.
     """
     adjuster_id = str(uuid.uuid4())
     compliance_id = str(uuid.uuid4())
     engineer_id = str(uuid.uuid4())
     member_id = str(uuid.uuid4())
+    other_member_id = str(uuid.uuid4())
     policy_id = str(uuid.uuid4())
     provider_id = str(uuid.uuid4())
 
     conn = await asyncpg.connect(_TEST_HOST_DSN)
     try:
         await conn.execute(
-            "INSERT INTO users (user_id, full_name, email, role) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8), ($9,$10,$11,$12)",
+            "INSERT INTO users (user_id, full_name, email, role, password_hash) VALUES "
+            "($1,$2,$3,$4,$5), ($6,$7,$8,$9,$10), ($11,$12,$13,$14,$15)",
             adjuster_id,
             "Alex Adjuster",
             "alex@example.com",
             "adjuster",
+            _SEED_PASSWORD_HASH,
             compliance_id,
             "Carla Compliance",
             "carla@example.com",
             "compliance_officer",
+            _SEED_PASSWORD_HASH,
             engineer_id,
             "Eve Engineer",
             "eve@example.com",
             "admin",
+            _SEED_PASSWORD_HASH,
         )
         await conn.execute(
             "INSERT INTO members (member_id, member_number, first_name, last_name, date_of_birth) "
-            "VALUES ($1,$2,$3,$4,$5)",
+            "VALUES ($1,$2,$3,$4,$5), ($6,$7,$8,$9,$10)",
             member_id,
             "MBR-0001",
             "Jane",
             "Doe",
             date(1990, 1, 1),
+            other_member_id,
+            "MBR-0002",
+            "John",
+            "Smith",
+            date(1985, 5, 5),
         )
         await conn.execute(
             "INSERT INTO policies "
@@ -195,11 +216,29 @@ async def seed():
     finally:
         await conn.close()
 
+    async def _login(email: str) -> dict[str, str]:
+        response = await client.post("/auth/login", json={"email": email, "password": SEED_PASSWORD})
+        assert response.status_code == 200, response.text
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    async def _member_login(member_number: str, dob: date) -> dict[str, str]:
+        response = await client.post(
+            "/auth/member-login", json={"member_number": member_number, "date_of_birth": dob.isoformat()}
+        )
+        assert response.status_code == 200, response.text
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
     return SimpleNamespace(
         adjuster_id=adjuster_id,
         compliance_id=compliance_id,
         engineer_id=engineer_id,
         member_id=member_id,
+        other_member_id=other_member_id,
         policy_id=policy_id,
         provider_id=provider_id,
+        adjuster_headers=await _login("alex@example.com"),
+        compliance_headers=await _login("carla@example.com"),
+        engineer_headers=await _login("eve@example.com"),
+        member_headers=await _member_login("MBR-0001", date(1990, 1, 1)),
+        other_member_headers=await _member_login("MBR-0002", date(1985, 5, 5)),
     )

@@ -6,17 +6,9 @@ import type {
   ClaimDocumentRead,
   ClaimRead,
   MemberPolicyRead,
-  MemberRead,
   ProviderRead,
   TimelineEvent,
 } from "./types";
-
-export function useMembers() {
-  return useQuery({
-    queryKey: ["members"],
-    queryFn: () => api.get<MemberRead[]>("/members"),
-  });
-}
 
 export function useMemberPolicies(memberId: string | null) {
   return useQuery({

@@ -20,11 +20,7 @@ from app.schemas.rule import RuleApprovalCreate, RuleCreate
 from app.services import audit_service
 
 
-async def create_rule(db: AsyncSession, payload: RuleCreate) -> Rule:
-    creator = await db.get(User, payload.created_by)
-    if creator is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"User {payload.created_by} not found")
-
+async def create_rule(db: AsyncSession, payload: RuleCreate, created_by: uuid.UUID) -> Rule:
     if payload.provider_id is not None:
         from app.models.provider import ProviderHospital
 
@@ -47,7 +43,7 @@ async def create_rule(db: AsyncSession, payload: RuleCreate) -> Rule:
         version=next_version,
         status=RuleStatus.draft,
         priority=payload.priority,
-        created_by=payload.created_by,
+        created_by=created_by,
         effective_from=payload.effective_from,
         effective_to=payload.effective_to,
     )
@@ -60,7 +56,7 @@ async def create_rule(db: AsyncSession, payload: RuleCreate) -> Rule:
         entity_id=rule.rule_id,
         event_type="rule_created",
         actor_type=ActorType.user,
-        actor_id=payload.created_by,
+        actor_id=created_by,
         description=f"Rule {rule.rule_code} v{rule.version} created as draft.",
         new_value={"status": rule.status.value, "version": rule.version},
     )
@@ -121,7 +117,7 @@ async def submit_for_approval(db: AsyncSession, rule_id: uuid.UUID, version: int
 
 
 async def record_approval(
-    db: AsyncSession, rule_id: uuid.UUID, version: int, payload: RuleApprovalCreate
+    db: AsyncSession, rule_id: uuid.UUID, version: int, approver_id: uuid.UUID, payload: RuleApprovalCreate
 ) -> RuleApproval:
     rule = await _get_rule_at_version(db, rule_id, version)
 
@@ -131,9 +127,7 @@ async def record_approval(
             f"Rule {rule_id} v{version} is '{rule.status.value}', not 'pending_approval'.",
         )
 
-    approver = await db.get(User, payload.approver_id)
-    if approver is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"User {payload.approver_id} not found")
+    approver = await db.get(User, approver_id)
 
     if payload.approval_status == "approved" and approver.role != UserRole.compliance_officer:
         raise HTTPException(
@@ -144,7 +138,7 @@ async def record_approval(
     approval = RuleApproval(
         rule_id=rule_id,
         rule_version=version,
-        approver_id=payload.approver_id,
+        approver_id=approver_id,
         approval_status=ApprovalStatus(payload.approval_status),
         comments=payload.comments,
         reviewed_at=datetime.now(timezone.utc),
@@ -164,7 +158,7 @@ async def record_approval(
         entity_id=rule.rule_id,
         event_type="rule_approval_recorded",
         actor_type=ActorType.user,
-        actor_id=payload.approver_id,
+        actor_id=approver_id,
         description=(
             f"{approver.full_name} recorded '{payload.approval_status}' for rule "
             f"{rule.rule_code} v{version}."

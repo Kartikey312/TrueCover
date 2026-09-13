@@ -95,8 +95,8 @@ async def test_adjuster_can_approve_despite_ai_escalation_and_it_is_recorded_as_
 
     decision = await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "approved",
             "approved_amount": "600.00",
             "reason": "Reviewed manually, documentation checks out.",
@@ -118,8 +118,8 @@ async def test_adjuster_can_deny_a_claim(client, seed):
 
     decision = await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "denied",
             "reason": "Not a covered service under this plan.",
             "idempotency_key": str(uuid.uuid4()),
@@ -135,8 +135,8 @@ async def test_decision_cannot_be_pending(client, seed):
 
     decision = await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "pending",
             "reason": "x",
             "idempotency_key": str(uuid.uuid4()),
@@ -164,8 +164,8 @@ async def test_cannot_decide_a_claim_that_was_never_submitted(client, seed):
 
     decision = await client.post(
         f"/claims/{created['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "approved",
             "reason": "x",
             "idempotency_key": str(uuid.uuid4()),
@@ -182,7 +182,8 @@ async def test_request_more_information_marks_claim_pending_documents(client, se
 
     response = await client.post(
         f"/claims/{claim['claim_id']}/request-info",
-        json={"requested_by": seed.adjuster_id, "message": "Please send an itemized receipt."},
+        headers=seed.adjuster_headers,
+        json={"message": "Please send an itemized receipt."},
     )
     assert response.status_code == 200
     assert response.json()["status"] == "pending_documents"
@@ -193,13 +194,14 @@ async def test_request_more_information_still_allows_a_later_decision(client, se
     claim = await _create_and_submit(client, seed)
     await client.post(
         f"/claims/{claim['claim_id']}/request-info",
-        json={"requested_by": seed.adjuster_id, "message": "Need more info."},
+        headers=seed.adjuster_headers,
+        json={"message": "Need more info."},
     )
 
     decision = await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "approved",
             "approved_amount": "100.00",
             "reason": "Confirmed by phone.",
@@ -214,8 +216,8 @@ async def test_request_more_information_rejected_after_final_decision(client, se
     claim = await _create_and_submit(client, seed)
     await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "denied",
             "reason": "Not covered.",
             "idempotency_key": str(uuid.uuid4()),
@@ -224,6 +226,7 @@ async def test_request_more_information_rejected_after_final_decision(client, se
 
     response = await client.post(
         f"/claims/{claim['claim_id']}/request-info",
-        json={"requested_by": seed.adjuster_id, "message": "Too late."},
+        headers=seed.adjuster_headers,
+        json={"message": "Too late."},
     )
     assert response.status_code == 409

@@ -270,7 +270,9 @@ async def get_review_packet(db: AsyncSession, claim_id: uuid.UUID) -> ClaimRevie
     )
 
 
-async def resume_claim_decision(db: AsyncSession, claim_id: uuid.UUID, payload: ClaimDecisionCreate) -> Claim:
+async def resume_claim_decision(
+    db: AsyncSession, claim_id: uuid.UUID, decided_by: uuid.UUID, payload: ClaimDecisionCreate
+) -> Claim:
     """Records an adjuster's decision and resumes the paused graph.
 
     Idempotency: a replay with the same idempotency_key and identical
@@ -327,7 +329,7 @@ async def resume_claim_decision(db: AsyncSession, claim_id: uuid.UUID, payload: 
         Command(
             resume={
                 "final_decision": payload.final_decision.value,
-                "adjuster_id": str(payload.decided_by),
+                "adjuster_id": str(decided_by),
                 "reason": payload.reason,
             }
         ),
@@ -343,7 +345,7 @@ async def resume_claim_decision(db: AsyncSession, claim_id: uuid.UUID, payload: 
     claim.final_decision_reason = final_outcome.get("reason")
     claim.final_decision_at = datetime.now(timezone.utc)
     claim.approved_amount = payload.approved_amount
-    claim.assigned_adjuster_id = payload.decided_by
+    claim.assigned_adjuster_id = decided_by
 
     rec_result = await db.execute(
         select(AIRecommendation)
@@ -364,14 +366,14 @@ async def resume_claim_decision(db: AsyncSession, claim_id: uuid.UUID, payload: 
             and recommendation.recommendation_type == AIRecommendationType.deny
         )
         recommendation.status = AIRecommendationStatus.accepted if matches else AIRecommendationStatus.overridden
-        recommendation.reviewed_by = payload.decided_by
+        recommendation.reviewed_by = decided_by
         recommendation.reviewed_at = datetime.now(timezone.utc)
 
     db.add(
         ClaimDecisionRequest(
             idempotency_key=payload.idempotency_key,
             claim_id=claim_id,
-            adjuster_id=payload.decided_by,
+            adjuster_id=decided_by,
             final_decision=payload.final_decision,
             approved_amount=payload.approved_amount,
             reason=payload.reason,

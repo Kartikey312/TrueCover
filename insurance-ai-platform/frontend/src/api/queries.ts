@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
   AdjusterQueueItem,
-  AdjusterRead,
   ClaimDecisionCreate,
   ClaimDocumentRead,
   ClaimRead,
@@ -11,13 +10,6 @@ import type {
   RequestInfoCreate,
   TimelineEvent,
 } from "./types";
-
-export function useAdjusters() {
-  return useQuery({
-    queryKey: ["adjusters"],
-    queryFn: () => api.get<AdjusterRead[]>("/adjuster/list"),
-  });
-}
 
 export function useQueue(adjusterId: string | null) {
   return useQuery({

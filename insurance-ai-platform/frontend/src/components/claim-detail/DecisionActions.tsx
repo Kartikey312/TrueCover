@@ -4,7 +4,6 @@ import { useDecision, useRequestInfo } from "../../api/queries";
 import { ApiError } from "../../api/client";
 import type { ClaimRead, ClaimReviewPacket } from "../../api/types";
 import { formatCurrency, titleCase } from "../../lib/format";
-import { useAdjusterIdentity } from "../../context/AdjusterContext";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { ErrorState } from "../ui/Feedback";
@@ -22,7 +21,6 @@ function newIdempotencyKey(): string {
 }
 
 export function DecisionActions({ claim, packet }: { claim: ClaimRead; packet: ClaimReviewPacket }) {
-  const { adjusterId } = useAdjusterIdentity();
   const decisionMutation = useDecision(claim.claim_id);
   const requestInfoMutation = useRequestInfo(claim.claim_id);
 
@@ -43,14 +41,6 @@ export function DecisionActions({ claim, packet }: { claim: ClaimRead; packet: C
     return null;
   }
 
-  if (!adjusterId) {
-    return (
-      <Card title="Decision">
-        <ErrorState message="Select who you're acting as (top right) before taking an action on this claim." />
-      </Card>
-    );
-  }
-
   function openDecisionModal(decision: PendingDecision) {
     setPendingDecision(decision);
     setApprovedAmount(decision === "approved" ? claim.billed_amount ?? "" : "");
@@ -64,10 +54,9 @@ export function DecisionActions({ claim, packet }: { claim: ClaimRead; packet: C
   }
 
   function submitDecision() {
-    if (!pendingDecision || !adjusterId) return;
+    if (!pendingDecision) return;
     decisionMutation.mutate(
       {
-        decided_by: adjusterId,
         final_decision: pendingDecision,
         approved_amount: pendingDecision === "approved" ? approvedAmount || null : null,
         reason,
@@ -78,9 +67,8 @@ export function DecisionActions({ claim, packet }: { claim: ClaimRead; packet: C
   }
 
   function submitRequestInfo() {
-    if (!adjusterId) return;
     requestInfoMutation.mutate(
-      { requested_by: adjusterId, message },
+      { message },
       {
         onSuccess: () => {
           setRequestInfoOpen(false);
@@ -191,7 +179,7 @@ export function DecisionActions({ claim, packet }: { claim: ClaimRead; packet: C
                 placeholder="What do you need from the member?"
               />
               <span className="mt-1 block text-xs text-slate-500">
-                There's no member portal yet, so this just marks the claim as waiting on more documents in the queue.
+                This marks the claim as waiting on the member and shows this message in their claim's progress timeline.
               </span>
             </label>
 

@@ -4,9 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.claim import Claim
-from app.models.enums import ClaimStatus, UserRole
+from app.models.enums import ClaimStatus
 from app.models.member import Member
-from app.models.user import User
 
 OPEN_STATUSES = [
     ClaimStatus.submitted,
@@ -58,10 +57,3 @@ async def get_queue(db: AsyncSession, adjuster_id: uuid.UUID | None) -> list[dic
         }
         for row in rows
     ]
-
-
-async def list_adjusters(db: AsyncSession) -> list[User]:
-    result = await db.execute(
-        select(User).where(User.role == UserRole.adjuster, User.is_active.is_(True)).order_by(User.full_name)
-    )
-    return list(result.scalars().all())

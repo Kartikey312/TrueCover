@@ -5,7 +5,9 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import get_current_user
 from app.models.enums import DocumentType
+from app.models.user import User
 from app.schemas.claim import ClaimCreate, ClaimRead
 from app.schemas.decision import ClaimDecisionCreate
 from app.schemas.document import ClaimDocumentRead
@@ -87,8 +89,13 @@ async def get_timeline(claim_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{claim_id}/decision", response_model=ClaimRead)
-async def record_decision(claim_id: uuid.UUID, payload: ClaimDecisionCreate, db: AsyncSession = Depends(get_db)):
-    return await pipeline_service.resume_claim_decision(db, claim_id, payload)
+async def record_decision(
+    claim_id: uuid.UUID,
+    payload: ClaimDecisionCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await pipeline_service.resume_claim_decision(db, claim_id, current_user.user_id, payload)
 
 
 @router.get("/{claim_id}/recommendation", response_model=AIRecommendationRead)
@@ -98,11 +105,14 @@ async def get_recommendation(claim_id: uuid.UUID, db: AsyncSession = Depends(get
 
 @router.post("/{claim_id}/request-info", response_model=ClaimRead)
 async def request_more_information(
-    claim_id: uuid.UUID, payload: RequestInfoCreate, db: AsyncSession = Depends(get_db)
+    claim_id: uuid.UUID,
+    payload: RequestInfoCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Marks the claim as waiting on the member for more information.
     Leaves final_decision untouched and the graph paused -- there's no
-    member portal yet to receive this, so it's purely a queue-visibility
-    signal until a real request/response loop exists.
+    member-facing request/response loop yet, so it's purely a
+    queue-visibility signal.
     """
-    return await claims_service.request_more_information(db, claim_id, payload)
+    return await claims_service.request_more_information(db, claim_id, current_user.user_id, payload)

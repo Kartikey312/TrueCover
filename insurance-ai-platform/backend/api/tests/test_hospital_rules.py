@@ -16,7 +16,7 @@ CONDITION = {
 }
 
 
-async def _create_draft_rule(client, seed, engineer_id):
+async def _create_draft_rule(client, seed, headers):
     response = await client.post(
         "/rules",
         json={
@@ -30,49 +30,51 @@ async def _create_draft_rule(client, seed, engineer_id):
                 "reason": "City General contract allows auto-approval up to $2000.",
             },
             "priority": 50,
-            "created_by": engineer_id,
         },
+        headers=headers,
     )
     assert response.status_code == 201, response.text
     return response.json()
 
 
 async def test_rule_cannot_activate_without_any_approval(client, seed):
-    engineer_id = seed.engineer_id
-    rule = await _create_draft_rule(client, seed, engineer_id)
-    await client.post(f"/rules/{rule['rule_id']}/versions/{rule['version']}/submit", params={"submitted_by": engineer_id})
+    headers = seed.engineer_headers
+    rule = await _create_draft_rule(client, seed, headers)
+    await client.post(f"/rules/{rule['rule_id']}/versions/{rule['version']}/submit", headers=headers)
 
     response = await client.post(
-        f"/rules/{rule['rule_id']}/versions/{rule['version']}/activate", json={"activated_by": engineer_id}
+        f"/rules/{rule['rule_id']}/versions/{rule['version']}/activate", headers=headers
     )
     assert response.status_code == 403
 
 
 async def test_non_compliance_user_cannot_record_an_approval(client, seed):
-    engineer_id = seed.engineer_id
-    rule = await _create_draft_rule(client, seed, engineer_id)
-    await client.post(f"/rules/{rule['rule_id']}/versions/{rule['version']}/submit", params={"submitted_by": engineer_id})
+    headers = seed.engineer_headers
+    rule = await _create_draft_rule(client, seed, headers)
+    await client.post(f"/rules/{rule['rule_id']}/versions/{rule['version']}/submit", headers=headers)
 
     response = await client.post(
         f"/rules/{rule['rule_id']}/versions/{rule['version']}/approvals",
-        json={"approver_id": engineer_id, "approval_status": "approved"},
+        json={"approval_status": "approved"},
+        headers=headers,
     )
     assert response.status_code == 403
 
 
 async def test_rule_activates_after_genuine_compliance_approval(client, seed):
-    engineer_id = seed.engineer_id
-    rule = await _create_draft_rule(client, seed, engineer_id)
-    await client.post(f"/rules/{rule['rule_id']}/versions/{rule['version']}/submit", params={"submitted_by": engineer_id})
+    headers = seed.engineer_headers
+    rule = await _create_draft_rule(client, seed, headers)
+    await client.post(f"/rules/{rule['rule_id']}/versions/{rule['version']}/submit", headers=headers)
 
     approval = await client.post(
         f"/rules/{rule['rule_id']}/versions/{rule['version']}/approvals",
-        json={"approver_id": seed.compliance_id, "approval_status": "approved"},
+        json={"approval_status": "approved"},
+        headers=seed.compliance_headers,
     )
     assert approval.status_code == 201
 
     activation = await client.post(
-        f"/rules/{rule['rule_id']}/versions/{rule['version']}/activate", json={"activated_by": engineer_id}
+        f"/rules/{rule['rule_id']}/versions/{rule['version']}/activate", headers=headers
     )
     assert activation.status_code == 200
     assert activation.json()["status"] == "active"
@@ -80,23 +82,25 @@ async def test_rule_activates_after_genuine_compliance_approval(client, seed):
 
 
 async def test_activating_a_new_version_deprecates_the_previous_active_one(client, seed):
-    engineer_id = seed.engineer_id
-    v1 = await _create_draft_rule(client, seed, engineer_id)
-    await client.post(f"/rules/{v1['rule_id']}/versions/1/submit", params={"submitted_by": engineer_id})
+    headers = seed.engineer_headers
+    v1 = await _create_draft_rule(client, seed, headers)
+    await client.post(f"/rules/{v1['rule_id']}/versions/1/submit", headers=headers)
     await client.post(
         f"/rules/{v1['rule_id']}/versions/1/approvals",
-        json={"approver_id": seed.compliance_id, "approval_status": "approved"},
+        json={"approval_status": "approved"},
+        headers=seed.compliance_headers,
     )
-    await client.post(f"/rules/{v1['rule_id']}/versions/1/activate", json={"activated_by": engineer_id})
+    await client.post(f"/rules/{v1['rule_id']}/versions/1/activate", headers=headers)
 
-    v2 = await _create_draft_rule(client, seed, engineer_id)
+    v2 = await _create_draft_rule(client, seed, headers)
     assert v2["version"] == 2
-    await client.post(f"/rules/{v2['rule_id']}/versions/2/submit", params={"submitted_by": engineer_id})
+    await client.post(f"/rules/{v2['rule_id']}/versions/2/submit", headers=headers)
     await client.post(
         f"/rules/{v2['rule_id']}/versions/2/approvals",
-        json={"approver_id": seed.compliance_id, "approval_status": "approved"},
+        json={"approval_status": "approved"},
+        headers=seed.compliance_headers,
     )
-    await client.post(f"/rules/{v2['rule_id']}/versions/2/activate", json={"activated_by": engineer_id})
+    await client.post(f"/rules/{v2['rule_id']}/versions/2/activate", headers=headers)
 
     rules = (await client.get("/rules", params={"provider_id": seed.provider_id})).json()
     by_version = {r["version"]: r["status"] for r in rules}
@@ -104,22 +108,22 @@ async def test_activating_a_new_version_deprecates_the_previous_active_one(clien
     assert by_version[2] == "active"
 
 
-async def _activate_hospital_rule(client, seed, engineer_id):
-    rule = await _create_draft_rule(client, seed, engineer_id)
-    await client.post(f"/rules/{rule['rule_id']}/versions/{rule['version']}/submit", params={"submitted_by": engineer_id})
+async def _activate_hospital_rule(client, seed, headers):
+    rule = await _create_draft_rule(client, seed, headers)
+    await client.post(f"/rules/{rule['rule_id']}/versions/{rule['version']}/submit", headers=headers)
     await client.post(
         f"/rules/{rule['rule_id']}/versions/{rule['version']}/approvals",
-        json={"approver_id": seed.compliance_id, "approval_status": "approved"},
+        json={"approval_status": "approved"},
+        headers=seed.compliance_headers,
     )
     await client.post(
-        f"/rules/{rule['rule_id']}/versions/{rule['version']}/activate", json={"activated_by": engineer_id}
+        f"/rules/{rule['rule_id']}/versions/{rule['version']}/activate", headers=headers
     )
     return rule
 
 
 async def test_active_hospital_rule_changes_claim_resolution(client, seed):
-    engineer_id = seed.engineer_id
-    rule = await _activate_hospital_rule(client, seed, engineer_id)
+    rule = await _activate_hospital_rule(client, seed, seed.engineer_headers)
 
     # $1500: above the global $500 auto-approve threshold (would escalate
     # under global rules alone), but within this hospital's $2000 limit.
@@ -162,8 +166,7 @@ async def test_active_hospital_rule_changes_claim_resolution(client, seed):
 
 
 async def test_a_different_hospital_does_not_get_this_rule(client, seed):
-    engineer_id = seed.engineer_id
-    await _activate_hospital_rule(client, seed, engineer_id)
+    await _activate_hospital_rule(client, seed, seed.engineer_headers)
 
     created = (
         await client.post(

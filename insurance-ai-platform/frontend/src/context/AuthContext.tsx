@@ -1,21 +1,21 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { api, setAuthToken } from "../api/client";
-import type { MemberRead, MemberTokenResponse } from "../api/types";
+import type { AdjusterRead, StaffTokenResponse } from "../api/types";
 
-const STORAGE_KEY = "member-portal:token";
+const STORAGE_KEY = "adjuster-console:token";
 
-interface MemberAuthContextValue {
-  member: MemberRead | null;
+interface AuthContextValue {
+  user: AdjusterRead | null;
   isLoading: boolean;
-  login: (memberNumber: string, dateOfBirth: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
-const MemberAuthContext = createContext<MemberAuthContextValue | undefined>(undefined);
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-export function MemberProvider({ children }: { children: ReactNode }) {
-  const [member, setMember] = useState<MemberRead | null>(null);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AdjusterRead | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -33,9 +33,11 @@ export function MemberProvider({ children }: { children: ReactNode }) {
 
     setAuthToken(stored);
     api
-      .get<MemberRead>("/auth/member-me")
-      .then(setMember)
+      .get<AdjusterRead>("/auth/me")
+      .then(setUser)
       .catch(() => {
+        // Token expired/invalid -- clear it rather than staying stuck
+        // sending a bad Authorization header on every request.
         setAuthToken(null);
         try {
           localStorage.removeItem(STORAGE_KEY);
@@ -46,18 +48,15 @@ export function MemberProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsLoading(false));
   }, []);
 
-  async function login(memberNumber: string, dateOfBirth: string) {
-    const response = await api.post<MemberTokenResponse>("/auth/member-login", {
-      member_number: memberNumber,
-      date_of_birth: dateOfBirth,
-    });
+  async function login(email: string, password: string) {
+    const response = await api.post<StaffTokenResponse>("/auth/login", { email, password });
     setAuthToken(response.access_token);
     try {
       localStorage.setItem(STORAGE_KEY, response.access_token);
     } catch {
       // Session still works for this tab; it just won't survive a reload.
     }
-    setMember(response.member);
+    setUser(response.user);
   }
 
   function logout() {
@@ -67,18 +66,16 @@ export function MemberProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
-    setMember(null);
+    setUser(null);
   }
 
-  return (
-    <MemberAuthContext.Provider value={{ member, isLoading, login, logout }}>{children}</MemberAuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, isLoading, login, logout }}>{children}</AuthContext.Provider>;
 }
 
-export function useMemberAuth(): MemberAuthContextValue {
-  const context = useContext(MemberAuthContext);
+export function useAuth(): AuthContextValue {
+  const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useMemberAuth must be used within a MemberProvider");
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

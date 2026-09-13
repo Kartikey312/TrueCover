@@ -1,11 +1,10 @@
 import { Link } from "react-router-dom";
 
-import { useAdjusters } from "../../api/queries";
-import { useAdjusterIdentity } from "../../context/AdjusterContext";
+import { Button } from "../ui/Button";
+import { useAuth } from "../../context/AuthContext";
 
 export function Header() {
-  const { adjusterId, setAdjusterId } = useAdjusterIdentity();
-  const { data: adjusters, isLoading } = useAdjusters();
+  const { user, logout } = useAuth();
 
   return (
     <header className="border-b border-slate-200 bg-white">
@@ -14,22 +13,16 @@ export function Header() {
           Adjuster Console
         </Link>
 
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          Acting as
-          <select
-            className="rounded-md border-slate-300 bg-white py-1.5 pl-3 pr-8 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            value={adjusterId ?? ""}
-            onChange={(event) => setAdjusterId(event.target.value || null)}
-            disabled={isLoading}
-          >
-            <option value="">Unassigned queue (no adjuster)</option>
-            {adjusters?.map((adjuster) => (
-              <option key={adjuster.user_id} value={adjuster.user_id}>
-                {adjuster.full_name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {user && (
+          <div className="flex items-center gap-3 text-sm text-slate-600">
+            <span>
+              {user.full_name} <span className="text-slate-400">({user.role.replace(/_/g, " ")})</span>
+            </span>
+            <Button variant="ghost" onClick={logout}>
+              Sign out
+            </Button>
+          </div>
+        )}
       </div>
     </header>
   );

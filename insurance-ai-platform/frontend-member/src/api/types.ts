@@ -98,3 +98,14 @@ export interface ClaimDocumentRead {
 export interface ApiErrorBody {
   detail?: string;
 }
+
+export interface MemberLoginRequest {
+  member_number: string;
+  date_of_birth: string;
+}
+
+export interface MemberTokenResponse {
+  access_token: string;
+  token_type: string;
+  member: MemberRead;
+}

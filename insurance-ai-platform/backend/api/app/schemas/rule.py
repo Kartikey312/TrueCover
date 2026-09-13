@@ -63,7 +63,6 @@ class RuleCreate(BaseModel):
     priority: int = Field(default=0, description="Higher wins among matching rules in the same scope.")
     effective_from: datetime | None = None
     effective_to: datetime | None = None
-    created_by: uuid.UUID
 
 
 class RuleRead(BaseModel):
@@ -88,7 +87,6 @@ class RuleRead(BaseModel):
 
 
 class RuleApprovalCreate(BaseModel):
-    approver_id: uuid.UUID
     approval_status: Literal["approved", "rejected", "changes_requested"]
     comments: str | None = None
 
@@ -104,7 +102,3 @@ class RuleApprovalRead(BaseModel):
     comments: str | None
     reviewed_at: datetime | None
     created_at: datetime
-
-
-class RuleActivateRequest(BaseModel):
-    activated_by: uuid.UUID

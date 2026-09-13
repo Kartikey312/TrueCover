@@ -29,18 +29,17 @@ async def test_replaying_the_same_decision_with_the_same_key_returns_the_cached_
     claim = await _create_and_submit(client, seed)
     key = str(uuid.uuid4())
     payload = {
-        "decided_by": seed.adjuster_id,
         "final_decision": "approved",
         "approved_amount": "100.00",
         "reason": "Reviewed manually.",
         "idempotency_key": key,
     }
 
-    first = await client.post(f"/claims/{claim['claim_id']}/decision", json=payload)
+    first = await client.post(f"/claims/{claim['claim_id']}/decision", json=payload, headers=seed.adjuster_headers)
     assert first.status_code == 200
     assert first.json()["final_decision"] == "approved"
 
-    second = await client.post(f"/claims/{claim['claim_id']}/decision", json=payload)
+    second = await client.post(f"/claims/{claim['claim_id']}/decision", json=payload, headers=seed.adjuster_headers)
     assert second.status_code == 200
     assert second.json() == first.json()
 
@@ -51,8 +50,8 @@ async def test_same_key_with_a_different_decision_is_rejected(client, seed):
 
     first = await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "approved",
             "approved_amount": "100.00",
             "reason": "Reviewed manually.",
@@ -63,8 +62,8 @@ async def test_same_key_with_a_different_decision_is_rejected(client, seed):
 
     conflicting = await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "denied",
             "reason": "Changed my mind.",
             "idempotency_key": key,
@@ -82,8 +81,8 @@ async def test_a_fresh_key_against_an_already_decided_claim_is_rejected(client, 
 
     await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "approved",
             "approved_amount": "100.00",
             "reason": "First decision.",
@@ -93,8 +92,8 @@ async def test_a_fresh_key_against_an_already_decided_claim_is_rejected(client, 
 
     second_attempt = await client.post(
         f"/claims/{claim['claim_id']}/decision",
+        headers=seed.adjuster_headers,
         json={
-            "decided_by": seed.adjuster_id,
             "final_decision": "denied",
             "reason": "Second, unrelated attempt.",
             "idempotency_key": str(uuid.uuid4()),  # genuinely new key
@@ -107,17 +106,16 @@ async def test_replayed_decision_does_not_duplicate_audit_events(client, seed):
     claim = await _create_and_submit(client, seed)
     key = str(uuid.uuid4())
     payload = {
-        "decided_by": seed.adjuster_id,
         "final_decision": "approved",
         "approved_amount": "100.00",
         "reason": "Reviewed manually.",
         "idempotency_key": key,
     }
 
-    await client.post(f"/claims/{claim['claim_id']}/decision", json=payload)
+    await client.post(f"/claims/{claim['claim_id']}/decision", json=payload, headers=seed.adjuster_headers)
     timeline_after_first = (await client.get(f"/claims/{claim['claim_id']}/timeline")).json()
 
-    await client.post(f"/claims/{claim['claim_id']}/decision", json=payload)
+    await client.post(f"/claims/{claim['claim_id']}/decision", json=payload, headers=seed.adjuster_headers)
     timeline_after_replay = (await client.get(f"/claims/{claim['claim_id']}/timeline")).json()
 
     assert len(timeline_after_replay) == len(timeline_after_first)
