@@ -137,6 +137,15 @@ export interface SimilarClaimRead {
   submitted_at: string;
 }
 
+export interface SimilarClaimByContent {
+  claim_id: string;
+  claim_number: string;
+  claim_type: string;
+  billed_amount: string | null;
+  final_decision: string;
+  score: number;
+}
+
 export interface PolicyCitationDetail {
   source_document: string;
   document_type: string;
@@ -176,6 +185,7 @@ export interface ClaimReviewPacket {
   extracted_fields: Record<string, unknown>;
   policy_citations: PolicyCitation[];
   similar_claims: SimilarClaimRead[];
+  similar_claims_by_content: SimilarClaimByContent[];
 
   recommendation_type: AIRecommendationType | null;
   confidence_score: string | null;

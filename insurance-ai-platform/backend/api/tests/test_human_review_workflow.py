@@ -77,6 +77,10 @@ async def test_review_packet_contains_everything_the_adjuster_needs(client, seed
     assert any(not check["passed"] for check in packet["guardrail_checks"])
     assert isinstance(packet["policy_citations"], list) and packet["policy_citations"]
     assert isinstance(packet["audit_history"], list) and packet["audit_history"]
+    # Qdrant is stubbed out for this test run (see conftest's
+    # _stub_claim_similarity) -- the field must still be present and
+    # empty, not missing, so the frontend never has to special-case it.
+    assert packet["similar_claims_by_content"] == []
 
 
 # --- adverse determinations: denials/overrides must never be automatic ---

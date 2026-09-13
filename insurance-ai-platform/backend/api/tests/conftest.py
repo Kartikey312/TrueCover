@@ -111,6 +111,24 @@ async def _stub_policy_retrieval():
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
+async def _stub_claim_similarity():
+    """Same rationale as _stub_policy_retrieval above -- claim indexing
+    and similarity search both hit a live Qdrant + embedding model, which
+    this test run has neither reason nor need to depend on. The Qdrant-
+    backed behavior itself is covered by backend/qdrant's own test suite.
+    """
+    from app.services import claim_similarity_service
+
+    original_index = claim_similarity_service.index_decided_claim
+    original_find = claim_similarity_service.find_similar_decided_claims
+    claim_similarity_service.index_decided_claim = lambda **kwargs: None
+    claim_similarity_service.find_similar_decided_claims = lambda **kwargs: []
+    yield
+    claim_similarity_service.index_decided_claim = original_index
+    claim_similarity_service.find_similar_decided_claims = original_find
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def _database():
     await _recreate_test_database()
     yield

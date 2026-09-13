@@ -57,6 +57,12 @@ class ClaimReviewPacket(BaseModel):
     extracted_fields: dict[str, Any]
     policy_citations: list[dict[str, Any]]
     similar_claims: list[SimilarClaimRead]
+    # Cross-member, content-based matches from Qdrant (same clinical/
+    # billing shape, not necessarily the same member or claim type) --
+    # distinct from similar_claims above, which is a same-member/
+    # same-type Postgres lookup. Empty means none were found or Qdrant
+    # was unreachable, not that none exist.
+    similar_claims_by_content: list[dict[str, Any]]
 
     recommendation_type: str | None
     confidence_score: Decimal | None

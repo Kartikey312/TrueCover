@@ -55,6 +55,29 @@ export function FraudIndicators({ packet }: { packet: ClaimReviewPacket }) {
             </table>
           )}
         </div>
+
+        <div>
+          <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Similar claims across all members
+          </h3>
+          {packet.similar_claims_by_content.length === 0 ? (
+            <p className="text-sm text-slate-500">No content-similar claims found.</p>
+          ) : (
+            <table className="min-w-full text-sm">
+              <tbody className="divide-y divide-slate-100">
+                {packet.similar_claims_by_content.map((claim) => (
+                  <tr key={claim.claim_id}>
+                    <td className="py-1.5 pr-3 font-medium text-slate-800">{claim.claim_number}</td>
+                    <td className="py-1.5 pr-3 text-slate-600">{titleCase(claim.claim_type)}</td>
+                    <td className="py-1.5 pr-3 text-slate-600">{formatCurrency(claim.billed_amount)}</td>
+                    <td className="py-1.5 pr-3 text-slate-600">{titleCase(claim.final_decision)}</td>
+                    <td className="py-1.5 text-slate-500">{(claim.score * 100).toFixed(0)}% similar</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </Card>
   );

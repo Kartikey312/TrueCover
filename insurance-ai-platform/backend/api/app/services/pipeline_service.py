@@ -35,7 +35,7 @@ from app.models.provider import ProviderHospital
 from app.schemas.decision import ClaimDecisionCreate
 from app.schemas.review import ClaimReviewPacket, SimilarClaimRead
 from app.schemas.timeline import TimelineEvent
-from app.services import audit_service, policy_retrieval_service, rules_service
+from app.services import audit_service, claim_similarity_service, policy_retrieval_service, rules_service
 from app.services.claims_service import get_claim, get_timeline
 
 SIMILAR_CLAIMS_LIMIT = 5
@@ -210,7 +210,29 @@ async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Clai
 
     await db.commit()
     await db.refresh(claim)
+
+    if claim.final_decision != FinalDecisionStatus.pending:
+        await _index_claim_for_similarity(claim)
+
     return claim
+
+
+async def _index_claim_for_similarity(claim: Claim) -> None:
+    """Indexes a decided claim into Qdrant so future claims with similar
+    content can surface it as precedent. Fire-and-forget in the sense that
+    a Qdrant outage never fails the request -- see claim_similarity_service.
+    """
+    await asyncio.to_thread(
+        claim_similarity_service.index_decided_claim,
+        claim_id=str(claim.claim_id),
+        claim_number=claim.claim_number,
+        claim_type=claim.claim_type.value,
+        procedure_codes=list(claim.procedure_codes or []),
+        diagnosis_codes=list(claim.diagnosis_codes or []),
+        billed_amount=str(claim.billed_amount) if claim.billed_amount is not None else None,
+        provider_id=str(claim.provider_id) if claim.provider_id else None,
+        final_decision=claim.final_decision.value,
+    )
 
 
 async def _get_similar_claims(db: AsyncSession, claim: Claim) -> list[Claim]:
@@ -244,6 +266,15 @@ async def get_review_packet(db: AsyncSession, claim_id: uuid.UUID) -> ClaimRevie
     supporting_evidence = (recommendation.supporting_evidence if recommendation else None) or {}
 
     similar_claims = await _get_similar_claims(db, claim)
+    similar_claims_by_content = await asyncio.to_thread(
+        claim_similarity_service.find_similar_decided_claims,
+        claim_id=str(claim.claim_id),
+        claim_type=claim.claim_type.value,
+        procedure_codes=list(claim.procedure_codes or []),
+        diagnosis_codes=list(claim.diagnosis_codes or []),
+        billed_amount=str(claim.billed_amount) if claim.billed_amount is not None else None,
+        provider_id=str(claim.provider_id) if claim.provider_id else None,
+    )
     audit_history = await get_timeline(db, claim_id)
 
     return ClaimReviewPacket(
@@ -260,6 +291,7 @@ async def get_review_packet(db: AsyncSession, claim_id: uuid.UUID) -> ClaimRevie
         extracted_fields=supporting_evidence.get("extracted_data", {}),
         policy_citations=supporting_evidence.get("policy_citations", []),
         similar_claims=[SimilarClaimRead.model_validate(c) for c in similar_claims],
+        similar_claims_by_content=similar_claims_by_content,
         recommendation_type=recommendation.recommendation_type.value if recommendation else None,
         confidence_score=recommendation.confidence_score if recommendation else None,
         reasoning=recommendation.reasoning if recommendation else None,
@@ -382,4 +414,8 @@ async def resume_claim_decision(
 
     await db.commit()
     await db.refresh(claim)
+
+    if claim.final_decision != FinalDecisionStatus.pending:
+        await _index_claim_for_similarity(claim)
+
     return claim
