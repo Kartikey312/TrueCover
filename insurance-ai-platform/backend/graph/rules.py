@@ -79,6 +79,10 @@ def _is_out_of_network(context: list[dict[str, Any]]) -> bool:
     return any(item.get("network_status") == "out_of_network" for item in context)
 
 
+def _is_billed_amount_outlier(context: list[dict[str, Any]]) -> bool:
+    return any(item.get("source") == "amount_anomaly" and item.get("is_outlier") for item in context)
+
+
 def build_facts(extracted_data: dict[str, Any], retrieved_context: list[dict[str, Any]]) -> dict[str, Any]:
     """Flat, JSON-safe view of a claim that conditions are evaluated
     against. Anything a rule needs to test belongs here.
@@ -88,6 +92,7 @@ def build_facts(extracted_data: dict[str, Any], retrieved_context: list[dict[str
         "billed_amount": _billed_amount(extracted_data),
         "has_documents": bool(extracted_data.get("documents")),
         "out_of_network": _is_out_of_network(retrieved_context),
+        "billed_amount_is_outlier": _is_billed_amount_outlier(retrieved_context),
         "diagnosis_codes": extracted_data.get("diagnosis_codes") or [],
         "procedure_codes": extracted_data.get("procedure_codes") or [],
         "provider_id": extracted_data.get("provider_id"),
@@ -172,6 +177,14 @@ DEFAULT_GLOBAL_RULES: tuple[Rule, ...] = (
         },
         reason="Out-of-network provider combined with a claim above the low-value threshold.",
         priority=80,
+    ),
+    Rule(
+        code="FRAUD-STATISTICAL-OUTLIER",
+        rule_type="fraud_detection",
+        action="flag_fraud",
+        condition={"field": "billed_amount_is_outlier", "op": "eq", "value": True},
+        reason="Billed amount is a statistical outlier compared to similar historical claims.",
+        priority=90,
     ),
     Rule(
         code="ELG-MISSING-DOCS",

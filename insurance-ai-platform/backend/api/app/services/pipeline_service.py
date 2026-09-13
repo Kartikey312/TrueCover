@@ -35,7 +35,13 @@ from app.models.provider import ProviderHospital
 from app.schemas.decision import ClaimDecisionCreate
 from app.schemas.review import ClaimReviewPacket, SimilarClaimRead
 from app.schemas.timeline import TimelineEvent
-from app.services import audit_service, claim_similarity_service, policy_retrieval_service, rules_service
+from app.services import (
+    anomaly_detection_service,
+    audit_service,
+    claim_similarity_service,
+    policy_retrieval_service,
+    rules_service,
+)
 from app.services.claims_service import get_claim, get_timeline
 
 SIMILAR_CLAIMS_LIMIT = 5
@@ -144,6 +150,16 @@ async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Clai
             claim_type=raw_input["claim_type"],
         )
 
+    # Only meaningful when billed_amount is already known pre-graph (i.e.
+    # not relying entirely on document extraction) -- same timing
+    # constraint as policy_context's claim_type above.
+    anomaly_context = await anomaly_detection_service.detect_billed_amount_anomaly(
+        db,
+        claim_id=claim.claim_id,
+        claim_type=claim.claim_type,
+        billed_amount=claim.billed_amount,
+    )
+
     graph = get_compiled_graph()
     config = {"configurable": {"thread_id": thread_id}}
     result = await graph.ainvoke(
@@ -152,6 +168,7 @@ async def submit_claim_for_review(db: AsyncSession, claim_id: uuid.UUID) -> Clai
             "raw_input": raw_input,
             "rule_definitions": rule_definitions,
             "policy_context": policy_context,
+            "anomaly_context": anomaly_context,
         },
         config=config,
     )

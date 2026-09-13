@@ -2,7 +2,11 @@ import type { PolicyCitation } from "../../api/types";
 import { Card } from "../ui/Card";
 import { EmptyState } from "../ui/Feedback";
 
-export function PolicyCitations({ citations }: { citations: PolicyCitation[] }) {
+export function PolicyCitations({ citations: allCitations }: { citations: PolicyCitation[] }) {
+  // amount_anomaly is a fraud/statistics signal, not a policy citation --
+  // it's shown in the Fraud indicators panel instead.
+  const citations = allCitations.filter((citation) => citation.source !== "amount_anomaly");
+
   return (
     <Card title="Policy citations">
       {citations.length === 0 ? (

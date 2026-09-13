@@ -46,6 +46,19 @@ VALUES
         80
     ),
     (
+        'FRAUD-STATISTICAL-OUTLIER',
+        'Billed amount is a statistical outlier',
+        'System default global rule seeded at deployment.',
+        'fraud_detection',
+        '{
+            "condition": {"field": "billed_amount_is_outlier", "op": "eq", "value": true},
+            "action": "flag_fraud",
+            "reason": "Billed amount is a statistical outlier compared to similar historical claims."
+        }'::jsonb,
+        'active',
+        90
+    ),
+    (
         'ELG-MISSING-DOCS',
         'Missing supporting documentation',
         'System default global rule seeded at deployment.',

@@ -95,6 +95,13 @@ class ClaimState(TypedDict, total=False):
     # relevant found" answer, not a signal to fall back.
     policy_context: list[dict[str, Any]] | None
 
+    # Statistical-outlier signal for this claim's billed_amount, computed
+    # by the caller from historical decided claims in Postgres (see
+    # app.services.anomaly_detection_service). None means "not supplied"
+    # (graph-only tests) -- no anomaly context is added, same as before
+    # this existed. An empty list is a real "not an outlier" answer.
+    anomaly_context: list[dict[str, Any]] | None
+
     extracted_data: dict[str, Any]
     extraction_errors: list[str]
 

@@ -182,6 +182,24 @@ def test_retrieval_node_uses_supplied_policy_context_chunks_when_present():
     assert policy_entry["citation"] == {"page_number": 3}
 
 
+def test_retrieval_node_passes_through_anomaly_context():
+    state = {
+        "extracted_data": {"claim_type": "medical"},
+        "anomaly_context": [{"source": "amount_anomaly", "is_outlier": True, "z_score": 5.1}],
+    }
+    result = retrieval_node(state)
+
+    anomaly_entry = next(c for c in result["retrieved_context"] if c["source"] == "amount_anomaly")
+    assert anomaly_entry["is_outlier"] is True
+    assert anomaly_entry["z_score"] == 5.1
+
+
+def test_retrieval_node_omits_anomaly_entry_when_not_supplied():
+    state = {"extracted_data": {"claim_type": "medical"}}
+    result = retrieval_node(state)
+    assert all(c["source"] != "amount_anomaly" for c in result["retrieved_context"])
+
+
 def test_retrieval_node_reports_no_match_for_empty_policy_context():
     """An empty list from the caller is a real 'nothing found' answer,
     distinct from not having supplied policy_context at all."""

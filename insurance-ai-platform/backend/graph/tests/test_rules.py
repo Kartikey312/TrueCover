@@ -82,6 +82,18 @@ def test_out_of_network_non_trivial_claim_flags_fraud():
     assert resolve_verdict(results)[0] == "flag_fraud"
 
 
+def test_statistical_outlier_billed_amount_flags_fraud():
+    context = IN_NETWORK_CONTEXT + [{"source": "amount_anomaly", "is_outlier": True, "z_score": 4.2}]
+    results = evaluate_rules(BASE_EXTRACTED, context)
+    assert resolve_verdict(results)[0] == "flag_fraud"
+
+
+def test_amount_anomaly_context_present_but_not_an_outlier_does_not_flag_fraud():
+    context = IN_NETWORK_CONTEXT + [{"source": "amount_anomaly", "is_outlier": False, "z_score": 0.5}]
+    results = evaluate_rules(BASE_EXTRACTED, context)
+    assert resolve_verdict(results)[0] == "auto_approve"
+
+
 def test_unrecognized_claim_type_auto_denies():
     extracted = {**BASE_EXTRACTED, "claim_type": "not_a_real_type"}
     results = evaluate_rules(extracted, IN_NETWORK_CONTEXT)

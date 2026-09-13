@@ -10,6 +10,7 @@ export function FraudIndicators({ packet }: { packet: ClaimReviewPacket }) {
   const conflictCheck = packet.guardrail_checks.find((check) => check.name === "no_fraud_or_policy_conflict");
   const flaggedByAI = packet.recommendation_type === "flag_for_fraud";
   const hasIndicators = flaggedByAI || fraudRules.length > 0 || conflictCheck?.passed === false;
+  const amountAnomaly = packet.policy_citations.find((citation) => citation.source === "amount_anomaly");
 
   return (
     <Card title="Fraud indicators">
@@ -32,6 +33,22 @@ export function FraudIndicators({ packet }: { packet: ClaimReviewPacket }) {
               </li>
             ))}
           </ul>
+        )}
+
+        {amountAnomaly && (
+          <div
+            className={`rounded-md p-3 text-sm ring-1 ring-inset ${
+              amountAnomaly.is_outlier ? "bg-red-50 text-red-800 ring-red-200" : "bg-slate-50 text-slate-600 ring-slate-200"
+            }`}
+          >
+            <div className="font-medium">
+              {amountAnomaly.is_outlier ? "Billed amount is a statistical outlier" : "Billed amount is within the typical range"}
+            </div>
+            <p className="mt-0.5">
+              z-score {amountAnomaly.z_score} against a historical mean of {formatCurrency(amountAnomaly.historical_mean ?? null)}{" "}
+              across {amountAnomaly.sample_size} decided {titleCase(packet.claim_type)} claims.
+            </p>
+          </div>
         )}
 
         <div>

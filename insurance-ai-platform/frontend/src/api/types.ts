@@ -166,6 +166,10 @@ export interface PolicyCitation {
   reason?: string;
   score?: number;
   citation?: PolicyCitationDetail;
+  is_outlier?: boolean;
+  z_score?: number;
+  sample_size?: number;
+  historical_mean?: string;
   [key: string]: unknown;
 }
 

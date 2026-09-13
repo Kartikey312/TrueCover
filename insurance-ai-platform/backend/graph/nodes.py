@@ -199,12 +199,15 @@ def _policy_context_items(
 
 
 def _retrieve_context(
-    extracted_data: dict[str, Any], policy_chunks: list[dict[str, Any]] | None
+    extracted_data: dict[str, Any],
+    policy_chunks: list[dict[str, Any]] | None,
+    anomaly_context: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
     claim_type = extracted_data.get("claim_type")
     provider_id = extracted_data.get("provider_id")
 
     context: list[dict[str, Any]] = _policy_context_items(claim_type, policy_chunks)
+    context.extend(anomaly_context or [])
 
     if provider_id:
         context.append(
@@ -233,7 +236,8 @@ def _retrieve_context(
 def retrieval_node(state: ClaimState) -> dict[str, Any]:
     extracted_data = state.get("extracted_data") or {}
     policy_chunks = state.get("policy_context")
-    context = _retrieve_context(extracted_data, policy_chunks)
+    anomaly_context = state.get("anomaly_context")
+    context = _retrieve_context(extracted_data, policy_chunks, anomaly_context)
 
     event = make_audit_event(
         node="retrieval_node",
